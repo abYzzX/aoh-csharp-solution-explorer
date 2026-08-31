@@ -29,34 +29,97 @@ jobs:
       - name: Compile
         run: npm run compile
 
-      - name: Debug artifact runtime
-        run: |
-          echo "ACTIONS_RESULTS_URL=$ACTIONS_RESULTS_URL"
-          echo "ACTIONS_RUNTIME_URL=$ACTIONS_RUNTIME_URL"
-          echo "GITHUB_SERVER_URL=$GITHUB_SERVER_URL"
-          echo "GITEA_SERVER_URL=$GITEA_SERVER_URL"
-
-      - name: Test Actions Results endpoint
-        shell: sh
-        run: |
-          echo "Testing $ACTIONS_RESULTS_URL"
-          wget -S -O /dev/null "$ACTIONS_RESULTS_URL" || true
-          
       - name: Package VSIX
         id: package
         shell: bash
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          VERSION="$(node -p "require('./package.json').version")"
           VSIX="aoh-solution-explorer-${VERSION}.vsix"
 
           npx @vscode/vsce package -o "$VSIX"
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "vsix=$VSIX" >> "$GITHUB_OUTPUT"
 
-      - name: Upload VSIX
+      # Praktisch für CI-Builds / Pull Requests
+      - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
           name: aoh-solution-explorer-${{ steps.package.outputs.version }}
           path: ${{ steps.package.outputs.vsix }}
           if-no-files-found: error
+
+      # Release nur bei Push auf master.
+      # Pull Requests sollen schließlich nicht plötzlich Releases produzieren.
+      - name: Create Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        id: release
+        shell: bash
+        env:
+          AOH_GITEA_TOKEN: ${{ secrets.AOH_GITEA_TOKEN }}
+          VERSION: ${{ steps.package.outputs.version }}
+          TAG: ${{ steps.package.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          API="$GITHUB_SERVER_URL/api/v1"
+          REPO="$GITHUB_REPOSITORY"
+
+          echo "Creating release $TAG"
+
+          RESPONSE="$(
+            curl --fail-with-body \
+              -X POST \
+              -H "Authorization: token $AOH_GITEA_TOKEN" \
+              -H "Content-Type: application/json" \
+              "$API/repos/$REPO/releases" \
+              -d "$(jq -n \
+                --arg tag "$TAG" \
+                --arg name "AOH Solution Explorer $VERSION" \
+                --arg target "$GITHUB_SHA" \
+                '{
+                  tag_name: $tag,
+                  target_commitish: $target,
+                  name: $name,
+                  body: ("Release " + $tag),
+                  draft: false,
+                  prerelease: false
+                }'
+              )"
+          )"
+
+          RELEASE_ID="$(echo "$RESPONSE" | jq -r '.id')"
+
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
+            echo "Could not determine release ID."
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          echo "Created release ID $RELEASE_ID"
+          echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Upload VSIX to Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        shell: bash
+        env:
+          AOH_GITEA_TOKEN: ${{ secrets.AOH_GITEA_TOKEN }}
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
+          VSIX: ${{ steps.package.outputs.vsix }}
+        run: |
+          set -euo pipefail
+
+          API="$GITHUB_SERVER_URL/api/v1"
+          REPO="$GITHUB_REPOSITORY"
+
+          echo "Uploading $VSIX to release $RELEASE_ID"
+
+          curl --fail-with-body \
+            -X POST \
+            -H "Authorization: token $AOH_GITEA_TOKEN" \
+            -F "attachment=@$VSIX" \
+            "$API/repos/$REPO/releases/$RELEASE_ID/assets?name=$VSIX"
+
+          echo
+          echo "Release asset uploaded successfully."
