@@ -260,3 +260,7 @@ Changes to `explorer.fileNesting` refresh the AOH Solution Explorer automaticall
 - Added **Follow Editor File** to automatically keep the Solution Explorer synchronized with the active editor.
 - Follow mode is stored per workspace and restored when the workspace is opened again.
 - Revealing the current file expands the required tree nodes without moving keyboard focus away from the editor.
+
+## 1.0.5
+
+- Added build pipeline
