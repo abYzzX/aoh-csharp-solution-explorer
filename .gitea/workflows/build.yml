@@ -14,7 +14,7 @@ env:
 
 jobs:
   build:
-    runs-on: docker
+    runs-on: ubuntu-latest
 
     container:
       image: soul-node:22
