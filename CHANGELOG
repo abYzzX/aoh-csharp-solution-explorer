@@ -253,3 +253,10 @@ AOH Solution Explorer uses VS Code's existing file nesting settings instead of d
 
 Changes to `explorer.fileNesting` refresh the AOH Solution Explorer automatically.
 
+
+## 1.0.4
+
+- Added **Select Current File** to reveal and select the file currently open in the editor.
+- Added **Follow Editor File** to automatically keep the Solution Explorer synchronized with the active editor.
+- Follow mode is stored per workspace and restored when the workspace is opened again.
+- Revealing the current file expands the required tree nodes without moving keyboard focus away from the editor.
