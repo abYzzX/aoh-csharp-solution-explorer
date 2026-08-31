@@ -52,7 +52,7 @@ jobs:
 
       # Release nur bei Push auf master.
       # Pull Requests sollen schließlich nicht plötzlich Releases produzieren.
-      - name: Create Release
+      - name: Create Gitea Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         id: release
         shell: bash
@@ -68,30 +68,39 @@ jobs:
 
           echo "Creating release $TAG"
 
+          PAYLOAD="$(node -e '
+            process.stdout.write(JSON.stringify({
+              tag_name: process.env.TAG,
+              target_commitish: process.env.GITHUB_SHA,
+              name: `AOH Solution Explorer ${process.env.VERSION}`,
+              body: `Release ${process.env.TAG}`,
+              draft: false,
+              prerelease: false
+            }));
+          ')"
+
           RESPONSE="$(
             curl --fail-with-body \
               -X POST \
               -H "Authorization: token $AOH_GITEA_TOKEN" \
               -H "Content-Type: application/json" \
               "$API/repos/$REPO/releases" \
-              -d "$(jq -n \
-                --arg tag "$TAG" \
-                --arg name "AOH Solution Explorer $VERSION" \
-                --arg target "$GITHUB_SHA" \
-                '{
-                  tag_name: $tag,
-                  target_commitish: $target,
-                  name: $name,
-                  body: ("Release " + $tag),
-                  draft: false,
-                  prerelease: false
-                }'
-              )"
+              -d "$PAYLOAD"
           )"
 
-          RELEASE_ID="$(echo "$RESPONSE" | jq -r '.id')"
+          RELEASE_ID="$(
+            printf '%s' "$RESPONSE" |
+              node -e '
+                let input = "";
+                process.stdin.on("data", chunk => input += chunk);
+                process.stdin.on("end", () => {
+                  const response = JSON.parse(input);
+                  process.stdout.write(String(response.id ?? ""));
+                });
+              '
+          )"
 
-          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
+          if [ -z "$RELEASE_ID" ]; then
             echo "Could not determine release ID."
             echo "$RESPONSE"
             exit 1
@@ -99,7 +108,7 @@ jobs:
 
           echo "Created release ID $RELEASE_ID"
           echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
-
+          
       - name: Upload VSIX to Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         shell: bash
