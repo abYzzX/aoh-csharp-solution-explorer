@@ -2,7 +2,7 @@
   "name": "aoh-solution-explorer",
   "displayName": "AOH - Solution Explorer",
   "description": "A Rider-inspired .NET solution explorer for VS Code.",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "publisher": "Abyzz",
   "icon": "media/aoh-logo-icon.png",
   "license": "WTFPL",
@@ -36,6 +36,21 @@
         "command": "aoh.solutionExplorer.refresh",
         "title": "Refresh",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "aoh.solutionExplorer.selectCurrentFile",
+        "title": "Select Current File",
+        "icon": "$(target)"
+      },
+      {
+        "command": "aoh.solutionExplorer.enableFollowEditor",
+        "title": "Follow Editor File",
+        "icon": "$(debug-reverse-continue)"
+      },
+      {
+        "command": "aoh.solutionExplorer.disableFollowEditor",
+        "title": "Stop Following Editor File",
+        "icon": "$(sync-ignored)"
       },
       {
         "command": "aoh.solutionExplorer.newProject",
@@ -141,9 +156,24 @@
     "menus": {
       "view/title": [
         {
+          "command": "aoh.solutionExplorer.selectCurrentFile",
+          "when": "view == aoh.solutionExplorer.view",
+          "group": "navigation@1"
+        },
+        {
+          "command": "aoh.solutionExplorer.enableFollowEditor",
+          "when": "view == aoh.solutionExplorer.view && !aoh.solutionExplorer.followEditor",
+          "group": "navigation@2"
+        },
+        {
+          "command": "aoh.solutionExplorer.disableFollowEditor",
+          "when": "view == aoh.solutionExplorer.view && aoh.solutionExplorer.followEditor",
+          "group": "navigation@2"
+        },
+        {
           "command": "aoh.solutionExplorer.refresh",
           "when": "view == aoh.solutionExplorer.view",
-          "group": "navigation"
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [

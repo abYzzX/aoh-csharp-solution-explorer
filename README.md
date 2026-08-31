@@ -1,236 +1,149 @@
 # AOH - Solution Explorer
 
-A Rider-inspired .NET Solution Explorer for VS Code.
+A project-centric Solution Explorer for Visual Studio Code.
 
-## 0.2.0
+AOH - Solution Explorer provides a familiar solution and project view for .NET development without trying to replace VS Code's built-in File Explorer.
 
-This version changes the extension from a workspace/file-oriented explorer into a real solution-oriented view.
+It focuses on the structure of your solution: projects, dependencies, folders, files, and the relationship between them.
 
-### Current behavior
+## Features
 
-- Finds `.sln` and `.slnx` files in the workspace.
-- Shows each solution as the root node: `SolutionName · N projects`.
-- Reads project membership from the solution instead of blindly scanning every project in the workspace.
-- Supports `.csproj`, `.fsproj`, and `.vbproj`.
-- Supports classic `.sln` solution folders via `NestedProjects`.
-- Supports the common nested-folder layout in `.slnx`.
-- Shows Rider-style virtual `Dependencies` and `Properties` nodes under projects.
-- Parses `PackageReference` and `ProjectReference` entries for `Dependencies`.
-- Shows project folders/files below the project.
-- Hides `bin`, `obj`, `.git`, `.vs`, `.idea`, and `node_modules`.
-- Keeps Rider-like `attached` and `Scratches and Consoles` roots as placeholders for now.
+### Solution and Project View
 
-This is intentionally still a structural/UI prototype. The next passes can refine icons, project/file ordering, solution-folder behavior, context menus, add/new-item flows, Git colors, namespaces, generated files, and exact Rider semantics.
+Displays your .NET solution as a structured tree instead of a plain filesystem hierarchy.
 
-- Solution-folder labels are normalized: `/app/` is displayed as `app`.
-- Path-like solution folders are split into nested nodes: `/src/grpc/` becomes `src` -> `grpc`.
+Supports:
 
-- Project references in Dependencies now show only the project name; `project` remains as the secondary label.
-- Package references show their version as the secondary label when the version is declared directly in the project file.
-- Project files now use VS Code's configured Git decoration colors for modified, added, deleted, renamed, and conflicted states.
+- `.sln` solutions
+- `.slnx` solutions
+- Multiple projects per solution
+- Solution folders
+- Project folders and files
+- Solution items
+- Project dependencies
+- Project properties
 
-- Fixed activation when VS Code's built-in Git extension has not been activated yet; Git integration is now optional and activated safely.
+### Project-Centric Navigation
 
-## 0.4.0
+The Solution Explorer represents the logical structure of your .NET solution rather than simply mirroring the filesystem.
 
-- Removed the dependency on VS Code's built-in `vscode.git` extension.
-- Git status is now read directly with `git status --porcelain`, matching AOH Git's independent approach.
-- Git decoration colors still use VS Code's configured `gitDecoration.*` theme colors.
-- The explorer remains fully functional when VS Code's built-in Git extension is disabled.
+This makes it easier to navigate larger solutions where the project structure matters more than the directory structure on disk.
 
-## 0.5.0
+### File Nesting
 
-- Removed `attached` and `Scratches and Consoles`.
-- Shows solution folders even when they contain only Solution Items and no projects.
-- Parses classic `.sln` `SolutionItems` entries (for folders such as `_sln`, `_doc`, etc.).
-- Empty `Properties` nodes are hidden.
-- Added `aoh.solutionExplorer.dependencies.sortProjectsBeforePackages` (default: `true`).
+Related files can be displayed below their parent file.
 
-### Native TreeView limitation
+Typical examples include:
 
-`itemSpacing` and per-view `showRootLines` are not exposed by VS Code's native `TreeView` API. Implementing those two settings without changing every VS Code tree globally requires moving AOH - Solution Explorer to a custom webview tree. They are intentionally not added as fake/no-op settings.
+```text
+MainWindow.xaml
+└── MainWindow.xaml.cs
 
-## 0.5.1
+Example.cs
+├── Example.Designer.cs
+└── Example.resx
+```
 
-- Fixed `.slnx` solution items: `<File Path="..." />` entries inside Solution Folders are now shown.
-- Files inherit the same Git decoration logic as normal project files.
+AOH - Solution Explorer respects VS Code's file nesting configuration.
 
-## 0.6.0
+For example:
 
-- Switched AOH - Solution Explorer from VS Code's native TreeView to a custom Webview tree.
-- `.csproj`, `.fsproj` and `.vbproj` files are now visible inside their projects.
-- Added `aoh.solutionExplorer.itemSpacing`.
-- Added `aoh.solutionExplorer.showRootLines`.
-- Kept `aoh.solutionExplorer.dependencies.sortProjectsBeforePackages`.
-- Solution folders and solution items continue to work for both `.sln` and `.slnx`.
-- Empty `Properties` nodes remain hidden.
-- Git status colors are rendered directly in the web tree using VS Code theme variables.
+```json
+{
+    "explorer.fileNesting.enabled": true,
+    "explorer.fileNesting.expand": true,
+    "explorer.fileNesting.patterns": {
+        "*.xaml": "${capture}.xaml.cs",
+        "*.cs": "${capture}.Designer.cs, ${capture}.resx"
+    }
+}
+```
 
-## 0.6.1
+### Select Current File
 
-- Added VS Code/Codicon-style monochrome icons to the web tree.
-- Project files get a dedicated document/project glyph.
-- Moved expand/collapse arrows to the right of the tree guide instead of drawing them on top of the line.
+Use **Select Current File** to locate the file currently open in the editor.
 
-## 0.6.2
+The Solution Explorer automatically expands the required project and folders and selects the corresponding file.
 
-- Reads the active VS Code file icon theme from `workbench.iconTheme`.
-- Resolves the matching `contributes.iconThemes` entry from installed extensions.
-- Uses the theme's own `fileNames`, `fileExtensions`, `folderNames`, `iconDefinitions` and font/SVG assets in the AOH web tree.
-- Falls back to AOH's monochrome icons only if the current theme cannot be resolved.
-- Moved expand/collapse arrows farther right of the tree guide.
-- Refreshes automatically when `workbench.iconTheme` changes.
+### Follow Editor File
 
-## 0.6.3
+Enable **Follow Editor File** to keep the Solution Explorer synchronized with the active editor.
 
-- Fixed the Webview CSP so active file-icon-theme SVG/PNG assets can actually load.
-- Added `font-src` support for font-based VS Code file icon themes.
+Whenever you switch to another file, the corresponding item is automatically revealed and selected in the Solution Explorer without moving keyboard focus away from the editor.
 
-## 0.7.0
+The setting is remembered per workspace.
 
-- Dependencies are now grouped into `Projects` and `Packages`.
-- Empty dependency groups are hidden.
-- Existing dependency sorting still applies inside each group.
+### Native VS Code Integration
 
-## 0.8.0
+AOH - Solution Explorer uses VS Code's native Tree View API.
 
-- Added a VS Code-styled right-click context menu to the web tree.
-- Files/projects: Open, Open to the Side, Copy Path, Copy Relative Path, Reveal.
-- Files/folders: Rename and Delete are included.
-- Dependencies, Projects/Packages dependency groups and dependency entries intentionally have no context menu.
+This means it integrates naturally with:
 
-## 0.9.0
+- VS Code themes
+- Product icon themes
+- Keyboard navigation
+- Context menus
+- Workspace state
+- Editor navigation
 
-- Context menu now scans installed VS Code extensions for their `explorer/context` contributions.
-- Extension commands are rendered dynamically and invoked with the selected resource URI, just like Explorer commands.
-- Known resource-specific `when` conditions (`resourceFilename`, `resourceExtname`, `resourceScheme`, folder/file checks) are filtered.
-- Unknown extension-specific context keys are treated conservatively as potentially valid instead of hiding the command.
-- Keeps a small built-in baseline for workbench-owned Explorer actions that are not exposed as extension menu contributions.
-- Added Open in Integrated Terminal.
+No custom WebView is used for the Solution Explorer.
 
-## 0.9.1
+## Requirements
 
-- Fixed TypeScript syntax in the dynamic `explorer/context` menu contribution cast.
+AOH - Solution Explorer requires the **C# Dev Kit** extension.
 
-## 0.9.2
+The C# Dev Kit provides the underlying .NET solution and project information used by the extension.
 
-- Context menu filtering now respects file type much more closely.
-- Added evaluation for `resourceLangId`, `resourceExtname`, `resourceFilename`, `resourceScheme` and file/folder context.
-- Added language mapping for C#, F#, VB, TypeScript/JavaScript, Markdown, XML/XAML/MSBuild, YAML, SQL, HTML/CSS and shell files.
-- Unknown private context keys are now treated as false instead of showing the command everywhere.
+## Why AOH - Solution Explorer?
 
-## 0.9.3
+VS Code already has an excellent File Explorer, but filesystem navigation and solution navigation solve different problems.
 
-- Added `ms-dotnettools.csdevkit` as an extension dependency.
-- C# Dev Kit Explorer commands are now curated by AOH instead of blindly injected.
-- `.csproj`/`.fsproj`/`.vbproj`: Build, Rebuild, Clean, Restore, Publish, project references, user secrets, New .NET File and C# Project Details.
-- `.cs`: Select Project Context when contributed by Dev Kit.
-- Folders: New File, New Folder and Dev Kit's New .NET File.
-- Other extensions continue to inject their `explorer/context` contributions dynamically.
+For larger .NET solutions, developers often want to think in terms of:
 
-## 0.9.4
+```text
+Solution
+├── Application
+├── Domain
+├── Infrastructure
+├── Tests
+└── Tools
+```
 
-- Fixed duplicate C# Dev Kit menu entries by de-duplicating visible menu labels.
-- Solution context menu now has `Create New Project...` and `Build Solution`.
-- Solution Folder context menu now has `Create New Project...`.
-- New Project resolves and executes C# Dev Kit's contributed New Project command dynamically.
-- Build Solution runs `dotnet build <solution>` in an integrated terminal.
-- Physical folders keep New File/New Folder/New .NET File; virtual Solution Folders no longer receive filesystem mutation actions.
+rather than:
 
-## 0.10.0 — Pause/refactor checkpoint
+```text
+src/
+tests/
+tools/
+Directory.Build.props
+global.json
+...
+```
 
-No intended feature changes. The prototype was split into focused components before putting the Solution Explorer on hold:
+AOH - Solution Explorer adds that project-centric view while leaving the normal VS Code File Explorer untouched.
 
-- `contextMenuService.ts` — menu composition, Dev Kit integration and context actions
-- `iconThemeService.ts` — active VS Code file-icon-theme resolution
-- `gitStatusService.ts` — Git porcelain/status mapping
-- `webviewHtml.ts` — Webview markup, styles and client-side tree code
-- `types.ts` — shared explorer/domain types
-- `extension.ts` — provider orchestration, solution/project parsing and tree construction
+Use whichever view makes sense for the task at hand.
 
-The default item spacing is now 4, matching the accepted UI checkpoint.
+## Philosophy
 
-## 0.11.0
+AOH - Solution Explorer follows a few simple principles:
 
-- Rebuilt context menus around Rider-inspired node-specific menus.
-- Added real nested submenus in the webview (`Add`, `Edit`, `Open In`, `Advanced Build Actions`).
-- Third-party Explorer contributions are isolated under `Extensions > <Extension>` instead of polluting the main menu.
-- C# Dev Kit remains a first-class dependency and is used selectively for .NET actions such as New .NET File and Project Reference.
-- Added solution/project build actions (`build`, `rebuild`, `clean`, `pack`, `publish`) via the .NET CLI.
-- Added New Solution Folder support for both `.slnx` and classic `.sln`.
-- Added Existing Project to solution menus via `dotnet sln ... add`.
+- Integrate with VS Code instead of fighting it.
+- Prefer native VS Code APIs over custom UI.
+- Add missing IDE functionality without replacing functionality that already works well.
+- Keep the extension focused on solution and project navigation.
+- Avoid unnecessary configuration and complexity.
 
-## 0.11.2
+## Part of AOH
 
-- Submenus no longer flip to the left when space gets tight.
-- Context submenus now always open to the right so they cannot disappear underneath VS Code's Activity Bar.
+AOH - Solution Explorer is part of **AOH - Abyzz's Overhaul**, a collection of extensions aimed at turning VS Code into a more complete and coherent development environment.
 
-## 0.11.3
+The goal is not to imitate another IDE.
 
-- Replaced fly-out context submenus with in-place stack navigation.
-- Clicking a submenu keeps the same popup and replaces its contents.
-- Nested levels show a Back button and current submenu title.
-- Context menus are re-positioned after level changes so they remain inside the Webview bounds.
+The goal is to build on what VS Code already does well and fill the gaps that become apparent in larger, professional development workflows.
 
-## 0.11.4
+**Making VS Code grow up.**
 
-- Removed duplicate submenu chevrons.
-- The complete `< Submenu` header is now clickable to navigate one menu level back.
-- Added hover feedback to the clickable back header.
+## License
 
-## 0.11.5
-
-- Fixed context menu actions not firing.
-- The selected context target is now captured before the menu is hidden; hiding the menu clears the active target.
-
-## 0.11.6
-
-- Fixed AOH `New File...`; files are created through the workspace filesystem, opened with `showTextDocument`, and errors are surfaced.
-- Renamed the basic filesystem actions to `New File...` and `New Directory...`.
-- Empty `.slnx` Solution Folders are now preserved, including self-closing `<Folder ... />` entries.
-- Solution Folder nodes now carry their logical folder path through the Webview context-menu pipeline.
-- `Add > New Solution Folder...` on a Solution Folder creates the new folder as a child of the selected folder.
-- Nested Solution Folder creation is supported for both `.slnx` and classic `.sln`.
-
-## 0.11.7
-
-- `Add > New Solution Folder...` now creates a root-level Solution Folder even when invoked from another Solution Folder, matching Rider's behavior.
-- Applies to both `.slnx` and classic `.sln`.
-
-## 0.11.8
-
-- Reverted the 0.11.7 behavior change: creating a Solution Folder from another Solution Folder nests it again.
-- Fixed leaf/empty node alignment so elements without an expand arrow use the same horizontal layout as expandable siblings.
-
-## 0.11.9
-
-- Fixed horizontal alignment of leaf nodes.
-- Nodes without an expand arrow no longer reserve the 16px twisty column; their icon moves left into that space.
-
-## 0.12.0
-
-- Tree hierarchy depth is now rendered explicitly and no longer depends on the expand-arrow column.
-- Leaf nodes can sit slightly left without visually jumping back to their parent's level.
-- Empty/leaf nodes use an 8px placeholder instead of the full 16px twisty slot.
-- Child rendering now passes an explicit depth value through the Webview tree.
-
-## 0.12.1
-
-- Removed tree/root guide lines from the Webview.
-- Removed `aoh.solutionExplorer.showRootLines`.
-- Removed `aoh.solutionExplorer.dependencies.sortProjectsBeforePackages`.
-
-## 0.13.0 — Native TreeView
-
-- Replaced the custom Webview tree with VS Code's native `TreeDataProvider` / `TreeView`.
-- The existing `.sln` / `.slnx` model, Solution Folders, Projects, Dependencies, Properties, Solution Items and filesystem tree remain.
-- File/project resources now use `resourceUri`, allowing VS Code to apply the active file icon theme and resource decorations natively.
-- Context menus are now real VS Code menus with native submenus.
-- Removed Webview-only spacing/root-line/icon/context-menu rendering code.
-- C# Dev Kit remains the backend for New Project, New .NET File and Add Project Reference.
-
-## 0.13.1
-
-- Added native `Delete` context-menu entries for Solution Folders and Projects.
-- Deleting a Project removes it from the solution via `dotnet sln ... remove`; project files stay on disk.
-- Deleting a Solution Folder removes the virtual folder from `.slnx` / `.sln`; physical files stay on disk.
+MIT

@@ -10,10 +10,63 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
     private readonly gitStatusService = new GitStatusService();
     private readonly contextMenuService = new ContextMenuService(async () => this.refresh());
+    private roots: WebNode[] | undefined;
+    private readonly parentById = new Map<string, WebNode>();
+    private readonly fileByPath = new Map<string, WebNode>();
 
     async refresh(): Promise<void> {
         await this.gitStatusService.load();
+        this.roots = await this.buildRoots();
+        this.rebuildIndexes();
         this.changed.fire();
+    }
+
+    async findFile(uri: vscode.Uri): Promise<WebNode | undefined> {
+        await this.ensureRoots();
+        return this.fileByPath.get(this.normalizeFsPath(uri.fsPath));
+    }
+
+    getParent(element: WebNode): vscode.ProviderResult<WebNode> {
+        return this.parentById.get(element.id);
+    }
+
+    private async ensureRoots(): Promise<WebNode[]> {
+        if (!this.roots) {
+            await this.gitStatusService.load();
+            this.roots = await this.buildRoots();
+            this.rebuildIndexes();
+        }
+
+        return this.roots;
+    }
+
+    private rebuildIndexes(): void {
+        this.parentById.clear();
+        this.fileByPath.clear();
+
+        const visit = (node: WebNode, parent?: WebNode): void => {
+            if (parent) {
+                this.parentById.set(node.id, parent);
+            }
+
+            if (node.kind === 'file' && node.uri) {
+                const uri = vscode.Uri.parse(node.uri);
+                this.fileByPath.set(this.normalizeFsPath(uri.fsPath), node);
+            }
+
+            for (const child of node.children ?? []) {
+                visit(child, node);
+            }
+        };
+
+        for (const root of this.roots ?? []) {
+            visit(root);
+        }
+    }
+
+    private normalizeFsPath(value: string): string {
+        const normalized = path.normalize(value);
+        return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
     }
 
     getTreeItem(element: WebNode): vscode.TreeItem {
@@ -53,6 +106,12 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             }
         }
 
+        // A nested file is collapsible. VS Code otherwise renders a collapsible
+        // resourceUri like a folder, so force a file icon for nested file parents.
+        if (element.kind === 'file' && hasChildren) {
+            item.iconPath = vscode.ThemeIcon.File;
+        }
+
         // Virtual nodes need an explicit icon; physical resources deliberately do not.
         switch (element.kind) {
             case 'solutionFolder':
@@ -84,8 +143,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             return element.children ?? [];
         }
 
-        await this.gitStatusService.load();
-        return this.buildRoots();
+        return this.ensureRoots();
     }
 
     async runAction(action: string, element?: WebNode): Promise<void> {
@@ -370,10 +428,164 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
             folders.sort((a, b) => a.label.localeCompare(b.label));
             files.sort((a, b) => a.label.localeCompare(b.label));
-            return [...folders, ...files];
+
+            const nestedFiles = this.applyFileNesting(uri, files);
+            return [...folders, ...nestedFiles];
         } catch {
             return [];
         }
+    }
+
+    private applyFileNesting(directoryUri: vscode.Uri, files: WebNode[]): WebNode[] {
+        const configuration = vscode.workspace.getConfiguration('explorer.fileNesting', directoryUri);
+        const enabled = configuration.get<boolean>('enabled', false);
+
+        if (!enabled || files.length < 2) {
+            return files;
+        }
+
+        const patterns = configuration.get<Record<string, string>>('patterns', {});
+        const expand = configuration.get<boolean>('expand', true);
+        const entries = Object.entries(patterns) as Array<[string, string]>;
+
+        if (!entries.length) {
+            return files;
+        }
+
+        const byName = new Map(files.map(file => [file.label, file]));
+        const parentFor = new Map<string, string>();
+
+        for (const parent of files) {
+            for (const [parentPattern, childPatternsValue] of entries) {
+                const capture = this.matchFileNestingParent(parent.label, parentPattern);
+                if (capture === undefined) continue;
+
+                const childPatterns = childPatternsValue
+                    .split(',')
+                    .map(pattern => pattern.trim())
+                    .filter(Boolean);
+
+                for (const childPattern of childPatterns) {
+                    const resolvedPattern = this.resolveFileNestingChildPattern(
+                        childPattern,
+                        parent.label,
+                        directoryUri,
+                        capture
+                    );
+
+                    for (const child of files) {
+                        if (child.id === parent.id || parentFor.has(child.label)) continue;
+                        if (!this.matchesFileNestingPattern(child.label, resolvedPattern)) continue;
+                        if (this.wouldCreateFileNestingCycle(parent.label, child.label, parentFor)) continue;
+
+                        parentFor.set(child.label, parent.label);
+                    }
+                }
+            }
+        }
+
+        for (const [childName, parentName] of parentFor) {
+            const child = byName.get(childName);
+            const parent = byName.get(parentName);
+            if (!child || !parent) continue;
+
+            parent.children ??= [];
+            parent.children.push(child);
+            parent.expanded = expand;
+        }
+
+        for (const file of files) {
+            file.children?.sort((a, b) => a.label.localeCompare(b.label));
+        }
+
+        return files.filter(file => !parentFor.has(file.label));
+    }
+
+    private matchFileNestingParent(fileName: string, pattern: string): string | undefined {
+        const starIndex = pattern.indexOf('*');
+
+        if (starIndex < 0) {
+            return this.fileNestingEquals(fileName, pattern) ? '' : undefined;
+        }
+
+        const prefix = pattern.slice(0, starIndex);
+        const suffix = pattern.slice(starIndex + 1);
+
+        if (!this.fileNestingStartsWith(fileName, prefix) ||
+            !this.fileNestingEndsWith(fileName, suffix) ||
+            fileName.length < prefix.length + suffix.length) {
+            return undefined;
+        }
+
+        return fileName.slice(prefix.length, fileName.length - suffix.length);
+    }
+
+    private resolveFileNestingChildPattern(
+        pattern: string,
+        parentFileName: string,
+        directoryUri: vscode.Uri,
+        capture: string
+    ): string {
+        const extensionWithDot = path.extname(parentFileName);
+        const extname = extensionWithDot.startsWith('.') ? extensionWithDot.slice(1) : extensionWithDot;
+        const basename = extensionWithDot
+            ? parentFileName.slice(0, -extensionWithDot.length)
+            : parentFileName;
+        const dirname = path.basename(directoryUri.fsPath);
+
+        return pattern
+            .replaceAll('${capture}', capture)
+            .replaceAll('${basename}', basename)
+            .replaceAll('${extname}', extname)
+            .replaceAll('${dirname}', dirname);
+    }
+
+    private matchesFileNestingPattern(fileName: string, pattern: string): boolean {
+        const starIndex = pattern.indexOf('*');
+
+        if (starIndex < 0) {
+            return this.fileNestingEquals(fileName, pattern);
+        }
+
+        const prefix = pattern.slice(0, starIndex);
+        const suffix = pattern.slice(starIndex + 1);
+
+        return this.fileNestingStartsWith(fileName, prefix) &&
+            this.fileNestingEndsWith(fileName, suffix) &&
+            fileName.length >= prefix.length + suffix.length;
+    }
+
+    private wouldCreateFileNestingCycle(
+        parentName: string,
+        childName: string,
+        parentFor: Map<string, string>
+    ): boolean {
+        let current: string | undefined = parentName;
+        const visited = new Set<string>();
+
+        while (current && !visited.has(current)) {
+            if (current === childName) return true;
+            visited.add(current);
+            current = parentFor.get(current);
+        }
+
+        return false;
+    }
+
+    private fileNestingEquals(left: string, right: string): boolean {
+        return process.platform === 'linux'
+            ? left === right
+            : left.localeCompare(right, undefined, { sensitivity: 'accent' }) === 0;
+    }
+
+    private fileNestingStartsWith(value: string, prefix: string): boolean {
+        if (process.platform === 'linux') return value.startsWith(prefix);
+        return value.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase());
+    }
+
+    private fileNestingEndsWith(value: string, suffix: string): boolean {
+        if (process.platform === 'linux') return value.endsWith(suffix);
+        return value.toLocaleLowerCase().endsWith(suffix.toLocaleLowerCase());
     }
 
     private makeFileNode(uri: vscode.Uri): WebNode {
@@ -661,13 +873,56 @@ export function activate(context: vscode.ExtensionContext): void {
         showCollapseAll: true
     });
 
+    const followEditorStateKey = 'aoh.solutionExplorer.followEditor';
+    let followEditor = context.workspaceState.get<boolean>(followEditorStateKey, false);
+
+    const updateFollowContext = async (): Promise<void> => {
+        await vscode.commands.executeCommand(
+            'setContext',
+            'aoh.solutionExplorer.followEditor',
+            followEditor
+        );
+    };
+
+    const selectCurrentFile = async (): Promise<void> => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor || editor.document.uri.scheme !== 'file') return;
+
+        const node = await provider.findFile(editor.document.uri);
+        if (!node) return;
+
+        await tree.reveal(node, {
+            select: true,
+            focus: false,
+            expand: true
+        });
+    };
+
+    const setFollowEditor = async (enabled: boolean): Promise<void> => {
+        followEditor = enabled;
+        await context.workspaceState.update(followEditorStateKey, enabled);
+        await updateFollowContext();
+
+        if (enabled) {
+            await selectCurrentFile();
+        }
+    };
+
     const action = (command: string, actionName: string) =>
         vscode.commands.registerCommand(command, (node?: WebNode) => provider.runAction(actionName, node));
+
+    void updateFollowContext();
 
     context.subscriptions.push(
         tree,
 
-        vscode.commands.registerCommand('aoh.solutionExplorer.refresh', () => provider.refresh()),
+        vscode.commands.registerCommand('aoh.solutionExplorer.refresh', async () => {
+            await provider.refresh();
+            if (followEditor) await selectCurrentFile();
+        }),
+        vscode.commands.registerCommand('aoh.solutionExplorer.selectCurrentFile', selectCurrentFile),
+        vscode.commands.registerCommand('aoh.solutionExplorer.enableFollowEditor', () => setFollowEditor(true)),
+        vscode.commands.registerCommand('aoh.solutionExplorer.disableFollowEditor', () => setFollowEditor(false)),
 
         action('aoh.solutionExplorer.newProject', 'newProject'),
         action('aoh.solutionExplorer.newSolutionFolder', 'newSolutionFolder'),
@@ -697,11 +952,30 @@ export function activate(context: vscode.ExtensionContext): void {
         action('aoh.solutionExplorer.findInFiles', 'findInFiles'),
         action('aoh.solutionExplorer.replaceInFiles', 'replaceInFiles'),
 
-        vscode.workspace.onDidCreateFiles(() => provider.refresh()),
+        vscode.window.onDidChangeActiveTextEditor(() => {
+            if (followEditor) void selectCurrentFile();
+        }),
+        vscode.workspace.onDidCreateFiles(async () => {
+            await provider.refresh();
+            if (followEditor) await selectCurrentFile();
+        }),
         vscode.workspace.onDidDeleteFiles(() => provider.refresh()),
-        vscode.workspace.onDidRenameFiles(() => provider.refresh()),
+        vscode.workspace.onDidRenameFiles(async () => {
+            await provider.refresh();
+            if (followEditor) await selectCurrentFile();
+        }),
         vscode.workspace.onDidSaveTextDocument(() => provider.refresh()),
-        vscode.workspace.onDidChangeWorkspaceFolders(() => provider.refresh())
+        vscode.workspace.onDidChangeWorkspaceFolders(async () => {
+            await provider.refresh();
+            if (followEditor) await selectCurrentFile();
+        }),
+        vscode.workspace.onDidChangeConfiguration((event: vscode.ConfigurationChangeEvent) => {
+            if (event.affectsConfiguration('explorer.fileNesting')) {
+                void provider.refresh().then(() => {
+                    if (followEditor) return selectCurrentFile();
+                });
+            }
+        })
     );
 }
 
