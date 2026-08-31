@@ -1,0 +1,12 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "compile: solution-explorer",
+      "type": "npm",
+      "script": "compile",
+      "path": "aoh-solution-explorer",
+      "problemMatcher": "$tsc"
+    }
+  ]
+}

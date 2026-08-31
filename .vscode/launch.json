@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "AOH - Solution Explorer",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/aoh-solution-explorer"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/aoh-solution-explorer/out/**/*.js"
+      ],
+      "preLaunchTask": "compile: solution-explorer"
+    }
+  ]
+}

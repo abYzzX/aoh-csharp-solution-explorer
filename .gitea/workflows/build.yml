@@ -1,0 +1,45 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: soul-node:22
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Package VSIX
+        id: package
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          VSIX="aoh-solution-explorer-${VERSION}.vsix"
+
+          npx --yes @vscode/vsce package --out "$VSIX"
+
+          echo "vsix=$VSIX" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Upload VSIX
+        uses: actions/upload-artifact@v3
+        with:
+          name: aoh-solution-explorer-${{ steps.package.outputs.version }}
+          path: ${{ steps.package.outputs.vsix }}
+          if-no-files-found: error
