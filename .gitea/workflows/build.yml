@@ -28,7 +28,7 @@ jobs:
 
       - name: Compile
         run: npm run compile
-        
+
       - name: Debug artifact runtime
         run: |
           echo "ACTIONS_RESULTS_URL=$ACTIONS_RESULTS_URL"
@@ -36,6 +36,12 @@ jobs:
           echo "GITHUB_SERVER_URL=$GITHUB_SERVER_URL"
           echo "GITEA_SERVER_URL=$GITEA_SERVER_URL"
 
+      - name: Test Actions Results endpoint
+        shell: sh
+        run: |
+          echo "Testing $ACTIONS_RESULTS_URL"
+          wget -S -O /dev/null "$ACTIONS_RESULTS_URL" || true
+          
       - name: Package VSIX
         id: package
         shell: bash
