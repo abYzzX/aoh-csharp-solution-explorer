@@ -1,3 +1,19 @@
+## 1.2.1
+
+- Removed hardcoded keyboard shortcuts. AOH exposes commands and leaves key assignment to the user.
+- Action commands fall back to the current TreeView selection when invoked without a context-menu node, so they can be bound to arbitrary keys.
+
+## 1.2.0
+
+- Added keyboard-friendly command invocation using the current TreeView selection.
+
+## 1.1.0
+
+- Added **Add Project Reference...** directly to the Dependencies context menu.
+- Project references can now be selected from projects in the current solution.
+- Already referenced projects and the current project are excluded from the picker.
+- References are added through the .NET CLI and the Solution Explorer refreshes afterwards.
+
 # AOH - Solution Explorer
 
 A Rider-inspired .NET Solution Explorer for VS Code.

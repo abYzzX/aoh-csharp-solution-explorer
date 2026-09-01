@@ -295,6 +295,8 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             id: `dependencies:${project.projectUri.toString()}`,
             kind: 'dependencies',
             label: 'Dependencies',
+            uri: project.projectUri.toString(),
+            solutionUri: solutionUri.toString(),
             children: dependencyGroups
         });
 
@@ -908,8 +910,14 @@ export function activate(context: vscode.ExtensionContext): void {
         }
     };
 
+    // Context-menu commands receive the clicked node from VS Code. Keyboard
+    // shortcuts do not, so fall back to the current TreeView selection. This
+    // keeps the commands usable from both mouse and keyboard without separate
+    // implementations.
     const action = (command: string, actionName: string) =>
-        vscode.commands.registerCommand(command, (node?: WebNode) => provider.runAction(actionName, node));
+        vscode.commands.registerCommand(command, (node?: WebNode) =>
+            provider.runAction(actionName, node ?? tree.selection[0])
+        );
 
     void updateFollowContext();
 

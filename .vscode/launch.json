@@ -6,10 +6,10 @@
       "type": "extensionHost",
       "request": "launch",
       "args": [
-        "--extensionDevelopmentPath=${workspaceFolder}/aoh-solution-explorer"
+        "--extensionDevelopmentPath=${workspaceFolder}"
       ],
       "outFiles": [
-        "${workspaceFolder}/aoh-solution-explorer/out/**/*.js"
+        "${workspaceFolder}/out/**/*.js"
       ],
       "preLaunchTask": "compile: solution-explorer"
     }

@@ -2,10 +2,10 @@
   "name": "aoh-solution-explorer",
   "displayName": "AOH - Solution Explorer",
   "description": "A Rider-inspired .NET solution explorer for VS Code.",
-  "version": "1.0.5",
+  "version": "1.2.1",
   "publisher": "Abyzz",
   "icon": "media/aoh-logo-icon.png",
-  "license": "WTFPL",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -180,6 +180,11 @@
         {
           "submenu": "aoh.solutionExplorer.add",
           "when": "view == aoh.solutionExplorer.view && viewItem =~ /aoh\\.(solution|solutionFolder|project|folder|file)/",
+          "group": "1_add"
+        },
+        {
+          "command": "aoh.solutionExplorer.addProjectReference",
+          "when": "view == aoh.solutionExplorer.view && viewItem == aoh.dependencies",
           "group": "1_add"
         },
         {

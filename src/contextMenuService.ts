@@ -1,7 +1,11 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { CommandContribution, DynamicContextMenuItem, ExplorerMenuContribution, NodeKind } from './types';
+
+const execFileAsync = promisify(execFile);
 
 export class ContextMenuService {
     constructor(private readonly refresh: () => Promise<void>) {}
@@ -55,10 +59,10 @@ export class ContextMenuService {
                     this.internal('New Directory...', 'newFolder'),
                     this.internal('New File...', 'newFile')
                 );
-                const addReference = this.findDevKitMenuItem(['add', 'project', 'reference']);
-                if (addReference) {
-                    addChildren.push(this.separator(), { ...addReference, label: 'Reference...' });
-                }
+                addChildren.push(
+                    this.separator(),
+                    this.internal('Project Reference...', 'addProjectReference')
+                );
 
                 items.push(
                     this.submenu('Add', addChildren),
@@ -78,6 +82,10 @@ export class ContextMenuService {
                 );
                 break;
             }
+
+            case 'dependencies':
+                items.push(this.internal('Add Project Reference...', 'addProjectReference'));
+                break;
 
             case 'folder':
             case 'file': {
@@ -317,12 +325,7 @@ export class ContextMenuService {
                 return;
             }
             case 'addProjectReference': {
-                const command = this.findDevKitCommand(['add', 'project', 'reference']);
-                if (!command) {
-                    vscode.window.showErrorMessage('C# Dev Kit does not expose Add Project Reference.');
-                    return;
-                }
-                await vscode.commands.executeCommand(command, uri);
+                await this.addProjectReference(uri, solutionUri);
                 return;
             }
             case 'newProject': {
@@ -672,6 +675,89 @@ export class ContextMenuService {
 
         await vscode.workspace.fs.writeFile(solutionUri, Buffer.from(next, 'utf8'));
         await this.refresh();
+    }
+
+    private async addProjectReference(projectUri: vscode.Uri, solutionUri?: vscode.Uri): Promise<void> {
+        if (!solutionUri) {
+            vscode.window.showErrorMessage('Could not determine the solution for this project.');
+            return;
+        }
+
+        const candidates = await this.getSolutionProjects(solutionUri);
+        const current = path.resolve(projectUri.fsPath);
+        const existing = await this.getExistingProjectReferences(projectUri);
+
+        const available = candidates.filter(candidate => {
+            const resolved = path.resolve(candidate.fsPath);
+            return resolved !== current && !existing.has(this.normalizePath(resolved));
+        });
+
+        if (!available.length) {
+            vscode.window.showInformationMessage('There are no projects available to add as a reference.');
+            return;
+        }
+
+        const picked = await vscode.window.showQuickPick(
+            available.map(candidate => ({
+                label: path.basename(candidate.fsPath, path.extname(candidate.fsPath)),
+                description: path.relative(path.dirname(solutionUri.fsPath), candidate.fsPath),
+                uri: candidate
+            })),
+            {
+                title: `Add Project Reference to ${path.basename(projectUri.fsPath, path.extname(projectUri.fsPath))}`,
+                placeHolder: 'Select a project from the current solution'
+            }
+        );
+        if (!picked) return;
+
+        try {
+            await execFileAsync(
+                'dotnet',
+                ['add', projectUri.fsPath, 'reference', picked.uri.fsPath],
+                { cwd: path.dirname(projectUri.fsPath) }
+            );
+            await this.refresh();
+        } catch (error: any) {
+            const detail = error?.stderr?.toString().trim() || error?.message || String(error);
+            vscode.window.showErrorMessage(`Failed to add project reference: ${detail}`);
+        }
+    }
+
+    private async getSolutionProjects(solutionUri: vscode.Uri): Promise<vscode.Uri[]> {
+        const text = Buffer.from(await vscode.workspace.fs.readFile(solutionUri)).toString('utf8');
+        const solutionDir = path.dirname(solutionUri.fsPath);
+        const projectPaths = new Set<string>();
+
+        if (solutionUri.fsPath.toLowerCase().endsWith('.slnx')) {
+            for (const match of text.matchAll(/<Project\b[^>]*\bPath="([^"]+\.(?:csproj|fsproj|vbproj))"/gi)) {
+                projectPaths.add(match[1]);
+            }
+        } else {
+            for (const match of text.matchAll(/^Project\([^\r\n]*?\)\s*=\s*"[^"]*"\s*,\s*"([^"]+\.(?:csproj|fsproj|vbproj))"/gmi)) {
+                projectPaths.add(match[1]);
+            }
+        }
+
+        return [...projectPaths].map(projectPath =>
+            vscode.Uri.file(path.resolve(solutionDir, projectPath.replace(/[\\/]/g, path.sep)))
+        );
+    }
+
+    private async getExistingProjectReferences(projectUri: vscode.Uri): Promise<Set<string>> {
+        const text = Buffer.from(await vscode.workspace.fs.readFile(projectUri)).toString('utf8');
+        const projectDir = path.dirname(projectUri.fsPath);
+        const result = new Set<string>();
+
+        for (const match of text.matchAll(/<ProjectReference\b[^>]*\bInclude="([^"]+)"/gi)) {
+            result.add(this.normalizePath(path.resolve(projectDir, match[1].replace(/[\\/]/g, path.sep))));
+        }
+
+        return result;
+    }
+
+    private normalizePath(value: string): string {
+        const normalized = path.normalize(value);
+        return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
     }
 
     private async runDotnet(title: string, contextUri: vscode.Uri, args: string[], cwd: string): Promise<void> {
