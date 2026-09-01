@@ -2,10 +2,10 @@
   "name": "aoh-solution-explorer",
   "displayName": "AOH - Solution Explorer",
   "description": "A Rider-inspired .NET solution explorer for VS Code.",
-  "version": "1.2.1",
+  "version": "1.4.0",
   "publisher": "Abyzz",
   "icon": "media/aoh-logo-icon.png",
-  "license": "MIT",
+  "license": "WTFPL",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -40,17 +40,26 @@
       {
         "command": "aoh.solutionExplorer.selectCurrentFile",
         "title": "Select Current File",
-        "icon": "$(target)"
+        "icon": {
+          "light": "media/select-current-file.svg",
+          "dark": "media/select-current-file.svg"
+        }
       },
       {
         "command": "aoh.solutionExplorer.enableFollowEditor",
         "title": "Follow Editor File",
-        "icon": "$(debug-reverse-continue)"
+        "icon": {
+          "light": "media/follow-active-file-disabled.svg",
+          "dark": "media/follow-active-file-disabled.svg"
+        }
       },
       {
         "command": "aoh.solutionExplorer.disableFollowEditor",
         "title": "Stop Following Editor File",
-        "icon": "$(sync-ignored)"
+        "icon": {
+          "light": "media/follow-active-file.svg",
+          "dark": "media/follow-active-file.svg"
+        }
       },
       {
         "command": "aoh.solutionExplorer.newProject",
@@ -479,8 +488,5 @@
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.90.0",
     "typescript": "^5.6.0"
-  },
-  "extensionDependencies": [
-    "ms-dotnettools.csdevkit"
-  ]
+  }
 }
