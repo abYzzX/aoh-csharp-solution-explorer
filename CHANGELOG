@@ -280,3 +280,7 @@ Changes to `explorer.fileNesting` refresh the AOH Solution Explorer automaticall
 ## 1.0.5
 
 - Added build pipeline
+1.6.7
+- Rebased on full 1.4.0 TypeScript source tree.
+- Source is now shipped with releases.
+- Added AOH output diagnostics and current context-menu commands in TypeScript.

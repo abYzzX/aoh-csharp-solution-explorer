@@ -4,15 +4,25 @@ import { ContextMenuService } from './contextMenuService';
 import { GitStatusService } from './gitStatusService';
 import { NodeKind, ParsedProject, ParsedSolutionFolder, ParsedSolution, WebNode, DependencyRef } from './types';
 
+// Bootstrap diagnostics are created at module load so an absent channel means
+// VS Code never loaded this runtime file.
+const bootstrapOutput = vscode.window.createOutputChannel('AOH Solution Explorer');
+bootstrapOutput.appendLine(`[bootstrap] Runtime module loaded; VS Code ${vscode.version}`);
+
 export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider<WebNode> {
     private readonly changed = new vscode.EventEmitter<WebNode | undefined | null | void>();
     readonly onDidChangeTreeData = this.changed.event;
 
-    private readonly gitStatusService = new GitStatusService();
-    private readonly contextMenuService = new ContextMenuService(async () => this.refresh());
+    private readonly gitStatusService: GitStatusService;
+    private readonly contextMenuService: ContextMenuService;
     private roots: WebNode[] | undefined;
     private readonly parentById = new Map<string, WebNode>();
     private readonly fileByPath = new Map<string, WebNode>();
+
+    constructor(log: (message: string) => void = () => {}) {
+        this.gitStatusService = new GitStatusService();
+        this.contextMenuService = new ContextMenuService(async () => this.refresh(), log);
+    }
 
     async refresh(): Promise<void> {
         await this.gitStatusService.load();
@@ -146,15 +156,27 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
         return this.ensureRoots();
     }
 
+    async createSolution(): Promise<void> {
+        await this.contextMenuService.createSolution();
+    }
+
     async runAction(action: string, element?: WebNode): Promise<void> {
         if (!element?.uri) return;
+
+        const collectUris = (node: WebNode): string[] => {
+            const result: string[] = [];
+            if (node.uri && node.kind !== 'solutionFolder' && node.kind !== 'solution') result.push(node.uri);
+            for (const child of node.children ?? []) result.push(...collectUris(child));
+            return [...new Set(result)];
+        };
 
         await this.contextMenuService.handleAction({
             action,
             uri: element.uri,
             kind: element.kind,
             solutionFolderPath: element.solutionFolderPath,
-            solutionUri: element.solutionUri
+            solutionUri: element.solutionUri,
+            targetUris: element.kind === 'solutionFolder' ? collectUris(element) : [element.uri]
         });
     }
 
@@ -165,7 +187,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             return [{
                 id: 'no-solution',
                 kind: 'solution',
-                label: 'No .sln or .slnx found'
+                label: 'Create New Solution...'
             }];
         }
 
@@ -868,123 +890,160 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-    const provider = new SolutionExplorerTreeDataProvider();
+    const output = bootstrapOutput;
+    context.subscriptions.push(output);
 
-    const tree = vscode.window.createTreeView('aoh.solutionExplorer.view', {
-        treeDataProvider: provider,
-        showCollapseAll: true
-    });
+    const log = (message: string, error?: unknown): void => {
+        const stamp = new Date().toISOString();
+        output.appendLine(`[${stamp}] ${message}`);
+        if (error !== undefined) {
+            output.appendLine(error instanceof Error ? (error.stack ?? error.message) : String(error));
+        }
+    };
 
+    log(`activate() started. Extension version: ${context.extension.packageJSON.version}`);
+    log(`VS Code: ${vscode.version}; extensionPath: ${context.extensionPath}`);
+
+    let provider: SolutionExplorerTreeDataProvider | undefined;
+    let tree: vscode.TreeView<WebNode> | undefined;
     const followEditorStateKey = 'aoh.solutionExplorer.followEditor';
     let followEditor = context.workspaceState.get<boolean>(followEditorStateKey, false);
 
+    const getProvider = (): SolutionExplorerTreeDataProvider => {
+        if (!provider) throw new Error('AOH Solution Explorer is not initialized.');
+        return provider;
+    };
+
     const updateFollowContext = async (): Promise<void> => {
-        await vscode.commands.executeCommand(
-            'setContext',
-            'aoh.solutionExplorer.followEditor',
-            followEditor
-        );
+        await vscode.commands.executeCommand('setContext', 'aoh.solutionExplorer.followEditor', followEditor);
     };
 
     const selectCurrentFile = async (): Promise<void> => {
+        if (!provider || !tree) return;
         const editor = vscode.window.activeTextEditor;
         if (!editor || editor.document.uri.scheme !== 'file') return;
-
         const node = await provider.findFile(editor.document.uri);
         if (!node) return;
-
-        await tree.reveal(node, {
-            select: true,
-            focus: false,
-            expand: true
-        });
+        await tree.reveal(node, { select: true, focus: false, expand: true });
     };
 
     const setFollowEditor = async (enabled: boolean): Promise<void> => {
         followEditor = enabled;
         await context.workspaceState.update(followEditorStateKey, enabled);
         await updateFollowContext();
+        if (enabled) await selectCurrentFile();
+    };
 
-        if (enabled) {
-            await selectCurrentFile();
+    const register = (command: string, handler: (...args: any[]) => any): void => {
+        try {
+            context.subscriptions.push(vscode.commands.registerCommand(command, handler));
+            log(`Registered command: ${command}`);
+        } catch (error) {
+            log(`FAILED to register command: ${command}`, error);
         }
     };
 
-    // Context-menu commands receive the clicked node from VS Code. Keyboard
-    // shortcuts do not, so fall back to the current TreeView selection. This
-    // keeps the commands usable from both mouse and keyboard without separate
-    // implementations.
-    const action = (command: string, actionName: string) =>
-        vscode.commands.registerCommand(command, (node?: WebNode) =>
-            provider.runAction(actionName, node ?? tree.selection[0])
-        );
+    const registerAction = (command: string, actionName: string): void => {
+        register(command, async (node?: WebNode) => {
+            log(`Command invoked: ${command} -> ${actionName}`);
+            try {
+                const activeProvider = getProvider();
+                const selected = node ?? tree?.selection?.[0];
+                return await activeProvider.runAction(actionName, selected);
+            } catch (error) {
+                log(`Command failed: ${command}`, error);
+                output.show(true);
+                vscode.window.showErrorMessage(`AOH command '${command}' failed. See Output > AOH Solution Explorer.`);
+                throw error;
+            }
+        });
+    };
+
+    register('aoh.solutionExplorer.showOutput', () => output.show(true));
+    register('aoh.solutionExplorer.refresh', async () => {
+        if (!provider) return;
+        await provider.refresh();
+        if (followEditor) await selectCurrentFile();
+    });
+    register('aoh.solutionExplorer.createSolution', () => getProvider().createSolution());
+    register('aoh.solutionExplorer.selectCurrentFile', selectCurrentFile);
+    register('aoh.solutionExplorer.enableFollowEditor', () => setFollowEditor(true));
+    register('aoh.solutionExplorer.disableFollowEditor', () => setFollowEditor(false));
+
+    for (const [command, actionName] of [
+        ['aoh.solutionExplorer.newProject', 'newProject'],
+        ['aoh.solutionExplorer.newSolutionFolder', 'newSolutionFolder'],
+        ['aoh.solutionExplorer.addExistingProject', 'addExistingProject'],
+        ['aoh.solutionExplorer.addExistingItem', 'addExistingItem'],
+        ['aoh.solutionExplorer.newFile', 'newFile'],
+        ['aoh.solutionExplorer.newFolder', 'newFolder'],
+        ['aoh.solutionExplorer.newDotNetFile', 'newDotNetFile'],
+        ['aoh.solutionExplorer.addProjectReference', 'addProjectReference'],
+        ['aoh.solutionExplorer.newClass', 'newClass'],
+        ['aoh.solutionExplorer.newInterface', 'newInterface'],
+        ['aoh.solutionExplorer.newEnum', 'newEnum'],
+        ['aoh.solutionExplorer.newStruct', 'newStruct'],
+        ['aoh.solutionExplorer.newRecord', 'newRecord'],
+        ['aoh.solutionExplorer.copy', 'copy'],
+        ['aoh.solutionExplorer.cut', 'cut'],
+        ['aoh.solutionExplorer.paste', 'paste'],
+        ['aoh.solutionExplorer.copyPathSolution', 'copyPathSolution'],
+        ['aoh.solutionExplorer.copyPathWorkspace', 'copyPathWorkspace'],
+        ['aoh.solutionExplorer.copyPathFull', 'copyPathFull'],
+        ['aoh.solutionExplorer.gitTrack', 'gitTrack'],
+        ['aoh.solutionExplorer.gitUntrack', 'gitUntrack'],
+        ['aoh.solutionExplorer.gitStage', 'gitStage'],
+        ['aoh.solutionExplorer.gitUnstage', 'gitUnstage'],
+        ['aoh.solutionExplorer.gitRollback', 'gitRollback'],
+        ['aoh.solutionExplorer.buildSolution', 'buildSolution'],
+        ['aoh.solutionExplorer.rebuildSolution', 'rebuildSolution'],
+        ['aoh.solutionExplorer.cleanSolution', 'cleanSolution'],
+        ['aoh.solutionExplorer.buildProject', 'buildProject'],
+        ['aoh.solutionExplorer.rebuildProject', 'rebuildProject'],
+        ['aoh.solutionExplorer.cleanProject', 'cleanProject'],
+        ['aoh.solutionExplorer.packProject', 'packProject'],
+        ['aoh.solutionExplorer.publishProject', 'publishProject'],
+        ['aoh.solutionExplorer.open', 'open'],
+        ['aoh.solutionExplorer.openToSide', 'openToSide'],
+        ['aoh.solutionExplorer.rename', 'rename'],
+        ['aoh.solutionExplorer.delete', 'delete'],
+        ['aoh.solutionExplorer.copyPath', 'copyPath'],
+        ['aoh.solutionExplorer.copyRelativePath', 'copyRelativePath'],
+        ['aoh.solutionExplorer.openTerminal', 'openTerminal'],
+        ['aoh.solutionExplorer.reveal', 'reveal'],
+        ['aoh.solutionExplorer.findInFiles', 'findInFiles'],
+        ['aoh.solutionExplorer.replaceInFiles', 'replaceInFiles']
+    ] as const) registerAction(command, actionName);
 
     void updateFollowContext();
 
-    context.subscriptions.push(
-        tree,
+    try {
+        provider = new SolutionExplorerTreeDataProvider(log);
+        tree = vscode.window.createTreeView('aoh.solutionExplorer.view', {
+            treeDataProvider: provider,
+            showCollapseAll: true
+        });
 
-        vscode.commands.registerCommand('aoh.solutionExplorer.refresh', async () => {
-            await provider.refresh();
-            if (followEditor) await selectCurrentFile();
-        }),
-        vscode.commands.registerCommand('aoh.solutionExplorer.selectCurrentFile', selectCurrentFile),
-        vscode.commands.registerCommand('aoh.solutionExplorer.enableFollowEditor', () => setFollowEditor(true)),
-        vscode.commands.registerCommand('aoh.solutionExplorer.disableFollowEditor', () => setFollowEditor(false)),
-
-        action('aoh.solutionExplorer.newProject', 'newProject'),
-        action('aoh.solutionExplorer.newSolutionFolder', 'newSolutionFolder'),
-        action('aoh.solutionExplorer.addExistingProject', 'addExistingProject'),
-        action('aoh.solutionExplorer.newFile', 'newFile'),
-        action('aoh.solutionExplorer.newFolder', 'newFolder'),
-        action('aoh.solutionExplorer.newDotNetFile', 'newDotNetFile'),
-        action('aoh.solutionExplorer.addProjectReference', 'addProjectReference'),
-
-        action('aoh.solutionExplorer.buildSolution', 'buildSolution'),
-        action('aoh.solutionExplorer.rebuildSolution', 'rebuildSolution'),
-        action('aoh.solutionExplorer.cleanSolution', 'cleanSolution'),
-        action('aoh.solutionExplorer.buildProject', 'buildProject'),
-        action('aoh.solutionExplorer.rebuildProject', 'rebuildProject'),
-        action('aoh.solutionExplorer.cleanProject', 'cleanProject'),
-        action('aoh.solutionExplorer.packProject', 'packProject'),
-        action('aoh.solutionExplorer.publishProject', 'publishProject'),
-
-        action('aoh.solutionExplorer.open', 'open'),
-        action('aoh.solutionExplorer.openToSide', 'openToSide'),
-        action('aoh.solutionExplorer.rename', 'rename'),
-        action('aoh.solutionExplorer.delete', 'delete'),
-        action('aoh.solutionExplorer.copyPath', 'copyPath'),
-        action('aoh.solutionExplorer.copyRelativePath', 'copyRelativePath'),
-        action('aoh.solutionExplorer.openTerminal', 'openTerminal'),
-        action('aoh.solutionExplorer.reveal', 'reveal'),
-        action('aoh.solutionExplorer.findInFiles', 'findInFiles'),
-        action('aoh.solutionExplorer.replaceInFiles', 'replaceInFiles'),
-
-        vscode.window.onDidChangeActiveTextEditor(() => {
-            if (followEditor) void selectCurrentFile();
-        }),
-        vscode.workspace.onDidCreateFiles(async () => {
-            await provider.refresh();
-            if (followEditor) await selectCurrentFile();
-        }),
-        vscode.workspace.onDidDeleteFiles(() => provider.refresh()),
-        vscode.workspace.onDidRenameFiles(async () => {
-            await provider.refresh();
-            if (followEditor) await selectCurrentFile();
-        }),
-        vscode.workspace.onDidSaveTextDocument(() => provider.refresh()),
-        vscode.workspace.onDidChangeWorkspaceFolders(async () => {
-            await provider.refresh();
-            if (followEditor) await selectCurrentFile();
-        }),
-        vscode.workspace.onDidChangeConfiguration((event: vscode.ConfigurationChangeEvent) => {
-            if (event.affectsConfiguration('explorer.fileNesting')) {
-                void provider.refresh().then(() => {
-                    if (followEditor) return selectCurrentFile();
-                });
-            }
-        })
-    );
+        context.subscriptions.push(
+            tree,
+            vscode.window.onDidChangeActiveTextEditor(() => { if (followEditor) void selectCurrentFile(); }),
+            vscode.workspace.onDidCreateFiles(async () => { await provider!.refresh(); if (followEditor) await selectCurrentFile(); }),
+            vscode.workspace.onDidDeleteFiles(() => provider!.refresh()),
+            vscode.workspace.onDidRenameFiles(async () => { await provider!.refresh(); if (followEditor) await selectCurrentFile(); }),
+            vscode.workspace.onDidSaveTextDocument(() => provider!.refresh()),
+            vscode.workspace.onDidChangeWorkspaceFolders(async () => { await provider!.refresh(); if (followEditor) await selectCurrentFile(); }),
+            vscode.workspace.onDidChangeConfiguration((event: vscode.ConfigurationChangeEvent) => {
+                if (event.affectsConfiguration('explorer.fileNesting')) {
+                    void provider!.refresh().then(() => { if (followEditor) return selectCurrentFile(); });
+                }
+            })
+        );
+        log('TreeView created successfully.');
+    } catch (error) {
+        log('Activation failed after command registration.', error);
+        output.show(true);
+        vscode.window.showErrorMessage('AOH Solution Explorer initialization failed. See Output > AOH Solution Explorer.');
+    }
 }
 
 export function deactivate(): void {}

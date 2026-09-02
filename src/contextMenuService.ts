@@ -8,7 +8,12 @@ import { CommandContribution, DynamicContextMenuItem, ExplorerMenuContribution, 
 const execFileAsync = promisify(execFile);
 
 export class ContextMenuService {
-    constructor(private readonly refresh: () => Promise<void>) {}
+    private clipboard?: { uris: vscode.Uri[]; cut: boolean };
+
+    constructor(
+        private readonly refresh: () => Promise<void>,
+        private readonly log: (message: string) => void = () => {}
+    ) {}
 
     buildMenu(uri: vscode.Uri, kind: NodeKind): DynamicContextMenuItem[] {
         const items: DynamicContextMenuItem[] = [];
@@ -294,6 +299,36 @@ export class ContextMenuService {
         return map[ext] ?? '';
     }
 
+    async createSolution(): Promise<void> {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        const target = await vscode.window.showOpenDialog({
+            title: 'Create New Solution',
+            canSelectFiles: false,
+            canSelectFolders: true,
+            canSelectMany: false,
+            defaultUri: workspaceFolder?.uri,
+            openLabel: 'Select Folder'
+        });
+        if (!target?.[0]) return;
+
+        const defaultName = path.basename(target[0].fsPath);
+        const name = await vscode.window.showInputBox({
+            title: 'Create New Solution',
+            prompt: 'Solution name',
+            value: defaultName,
+            validateInput: (value: string) => value.trim() ? undefined : 'Solution name is required.'
+        });
+        if (!name?.trim()) return;
+
+        try {
+            await execFileAsync('dotnet', ['new', 'sln', '-n', name.trim()], { cwd: target[0].fsPath });
+            await this.refresh();
+        } catch (error: any) {
+            const detail = error?.stderr?.toString().trim() || error?.message || String(error);
+            vscode.window.showErrorMessage(`Failed to create solution: ${detail}`);
+        }
+    }
+
     async handleAction(message: any): Promise<void> {
         if (typeof message?.action !== 'string' || typeof message?.uri !== 'string') return;
         const uri = vscode.Uri.parse(message.uri);
@@ -305,6 +340,11 @@ export class ContextMenuService {
             ? vscode.Uri.parse(message.solutionUri)
             : undefined;
         const action = message.action as string;
+        const targetUris = Array.isArray(message.targetUris)
+            ? message.targetUris
+                .filter((value: unknown): value is string => typeof value === 'string')
+                .map((value: string) => vscode.Uri.parse(value))
+            : [uri];
 
         if (action.startsWith('command:')) {
             const command = action.slice('command:'.length);
@@ -316,14 +356,55 @@ export class ContextMenuService {
         const containerUri = this.containerUri(uri, kind);
         switch (action) {
             case 'newDotNetFile': {
-                const command = this.findDevKitCommand(['new', '.net', 'file']);
-                if (!command) {
-                    vscode.window.showErrorMessage('C# Dev Kit does not expose a New .NET File command.');
-                    return;
+                const target = this.containerUri(uri, kind);
+                this.log(`New .NET File requested for kind=${kind ?? 'unknown'}, target=${target.toString()}`);
+                try {
+                    const devKit = vscode.extensions.getExtension('ms-dotnettools.csdevkit');
+                    this.log(`C# Dev Kit extension found: ${devKit ? 'YES' : 'NO'}${devKit ? `; active=${devKit.isActive}` : ''}`);
+                    if (devKit && !devKit.isActive) {
+                        this.log('Activating C# Dev Kit explicitly...');
+                        await devKit.activate();
+                        this.log('C# Dev Kit activation completed.');
+                    }
+                    const commands = await vscode.commands.getCommands(true);
+                    const candidates = commands.filter((command: string) => {
+                        const value = command.toLowerCase();
+                        return (value.includes('csdevkit') || value.includes('dotnet')) &&
+                            (value.includes('new') || value.includes('file') || value.includes('template'));
+                    });
+                    this.log(`Candidate Dev Kit/.NET commands: ${candidates.length ? candidates.join(', ') : '(none)'}`);
+                    const command = 'csdevkit.addNewFileToFolder';
+                    if (!commands.includes(command)) {
+                        this.log('ERROR: csdevkit.addNewFileToFolder is not registered.');
+                        await vscode.commands.executeCommand('aoh.solutionExplorer.showOutput');
+                        vscode.window.showErrorMessage('C# Dev Kit does not expose csdevkit.addNewFileToFolder. See Output > AOH Solution Explorer.');
+                        return;
+                    }
+                    this.log(`Executing ${command} with target ${target.toString()}`);
+                    await vscode.commands.executeCommand(command, target);
+                    this.log(`${command} completed.`);
+                    await this.refresh();
+                } catch (error) {
+                    this.log(`ERROR while invoking C# Dev Kit: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+                    await vscode.commands.executeCommand('aoh.solutionExplorer.showOutput');
+                    vscode.window.showErrorMessage('C# Dev Kit New .NET File failed. See Output > AOH Solution Explorer.');
                 }
-                await vscode.commands.executeCommand(command, uri);
                 return;
             }
+            case 'newClass': return this.createCSharpType(containerUri, 'class');
+            case 'newInterface': return this.createCSharpType(containerUri, 'interface');
+            case 'newEnum': return this.createCSharpType(containerUri, 'enum');
+            case 'newStruct': return this.createCSharpType(containerUri, 'struct');
+            case 'newRecord': return this.createCSharpType(containerUri, 'record');
+            case 'copy': this.clipboard = { uris: targetUris, cut: false }; return;
+            case 'cut': this.clipboard = { uris: targetUris, cut: true }; return;
+            case 'paste': return this.pasteItems(containerUri, kind, solutionFolderPath, uri);
+            case 'copyPathSolution': return this.copyPathRelativeToSolution(uri, solutionUri);
+            case 'copyPathWorkspace': return this.copyPathRelativeToWorkspace(uri);
+            case 'copyPathFull': await vscode.env.clipboard.writeText(uri.fsPath); return;
+            case 'gitTrack': return this.gitTrack(targetUris, uri, kind);
+            case 'gitUntrack': return this.gitUntrack(targetUris, uri, kind);
+            case 'addExistingItem': await this.addExistingItem(uri, kind, solutionFolderPath); return;
             case 'addProjectReference': {
                 await this.addProjectReference(uri, solutionUri);
                 return;
@@ -339,11 +420,18 @@ export class ContextMenuService {
             case 'newSolutionFolder':
                 return this.createSolutionFolder(uri, solutionFolderPath);
             case 'addExistingProject': {
-                const pick = await vscode.window.showOpenDialog({ canSelectMany: true, filters: { '.NET Projects': ['csproj','fsproj','vbproj'] } });
+                const pick = await vscode.window.showOpenDialog({ canSelectMany: true, filters: { '.NET Projects': ['csproj', 'fsproj', 'vbproj'] } });
                 if (!pick?.length) return;
-                for (const project of pick) await this.runDotnet('Add project', uri, ['sln', uri.fsPath, 'add', project.fsPath], path.dirname(uri.fsPath));
+                for (const project of pick) {
+                    const args = ['sln', uri.fsPath, 'add', project.fsPath];
+                    if (kind === 'solutionFolder' && solutionFolderPath.length) args.push('--solution-folder', solutionFolderPath.join('/'));
+                    await this.runDotnet('Add project', uri, args, path.dirname(uri.fsPath));
+                }
                 await this.refresh(); return;
             }
+            case 'gitStage': return this.gitStage(targetUris, uri, kind);
+            case 'gitUnstage': return this.gitUnstage(uri, kind);
+            case 'gitRollback': return this.gitRollback(targetUris, uri, kind);
             case 'buildSolution': return this.runDotnet('Build Solution', uri, ['build', uri.fsPath], path.dirname(uri.fsPath));
             case 'rebuildSolution': return this.runDotnet('Rebuild Solution', uri, ['build', uri.fsPath, '--no-incremental'], path.dirname(uri.fsPath));
             case 'cleanSolution': return this.runDotnet('Clean Solution', uri, ['clean', uri.fsPath], path.dirname(uri.fsPath));
@@ -454,6 +542,416 @@ export class ContextMenuService {
             case 'findInFiles': await vscode.commands.executeCommand('workbench.action.findInFiles'); return;
             case 'replaceInFiles': await vscode.commands.executeCommand('workbench.action.replaceInFiles'); return;
         }
+    }
+
+
+    private async createCSharpType(
+        directory: vscode.Uri,
+        type: 'class' | 'interface' | 'enum' | 'struct' | 'record'
+    ): Promise<void> {
+        const defaultName = type === 'interface' ? 'IMyInterface' : `My${type[0].toUpperCase()}${type.slice(1)}`;
+        const name = await vscode.window.showInputBox({
+            title: `New ${type[0].toUpperCase()}${type.slice(1)}`,
+            prompt: 'Type name',
+            value: defaultName
+        });
+        if (!name?.trim()) return;
+
+        const cleanName = name.trim().replace(/\.cs$/i, '');
+        const target = vscode.Uri.joinPath(directory, `${cleanName}.cs`);
+        const declaration = type === 'record'
+            ? `public record ${cleanName}\n{\n}\n`
+            : `public ${type} ${cleanName}\n{\n}\n`;
+
+        try {
+            await vscode.workspace.fs.writeFile(target, Buffer.from(declaration, 'utf8'));
+            await this.refresh();
+            await vscode.window.showTextDocument(target, { preview: false });
+        } catch (error) {
+            vscode.window.showErrorMessage(`Could not create '${target.fsPath}': ${String(error)}`);
+        }
+    }
+
+    private async pasteItems(
+        targetDirectory: vscode.Uri,
+        kind: NodeKind | undefined,
+        solutionFolderPath: string[],
+        solutionFolderUri: vscode.Uri
+    ): Promise<void> {
+        if (!this.clipboard?.uris.length) return;
+
+        if (kind === 'solutionFolder') {
+            await this.addSolutionItems(solutionFolderUri, solutionFolderPath, this.clipboard.uris);
+            if (this.clipboard.cut) this.clipboard = undefined;
+            await this.refresh();
+            return;
+        }
+
+        for (const source of this.clipboard.uris) {
+            const target = vscode.Uri.joinPath(targetDirectory, path.basename(source.fsPath));
+            if (this.normalizePath(source.fsPath) === this.normalizePath(target.fsPath)) continue;
+
+            try {
+                if (this.clipboard.cut) {
+                    await vscode.workspace.fs.rename(source, target, { overwrite: false });
+                } else {
+                    await vscode.workspace.fs.copy(source, target, { overwrite: false });
+                }
+            } catch (error) {
+                vscode.window.showErrorMessage(`Could not paste '${path.basename(source.fsPath)}': ${String(error)}`);
+                return;
+            }
+        }
+
+        if (this.clipboard.cut) this.clipboard = undefined;
+        await this.refresh();
+    }
+
+    private async copyPathRelativeToSolution(uri: vscode.Uri, solutionUri?: vscode.Uri): Promise<void> {
+        if (!solutionUri) {
+            await vscode.env.clipboard.writeText(path.basename(uri.fsPath));
+            return;
+        }
+        await vscode.env.clipboard.writeText(path.relative(path.dirname(solutionUri.fsPath), uri.fsPath));
+    }
+
+    private async copyPathRelativeToWorkspace(uri: vscode.Uri): Promise<void> {
+        const folder = vscode.workspace.getWorkspaceFolder(uri) ?? vscode.workspace.workspaceFolders?.[0];
+        await vscode.env.clipboard.writeText(
+            folder ? path.relative(folder.uri.fsPath, uri.fsPath) : path.basename(uri.fsPath)
+        );
+    }
+
+    private gitTargetUri(uri: vscode.Uri, kind?: NodeKind): vscode.Uri {
+        if (kind === 'project') return vscode.Uri.file(path.dirname(uri.fsPath));
+        return uri;
+    }
+
+    private async getGitContext(
+        uri: vscode.Uri,
+        kind?: NodeKind
+    ): Promise<{ root: string; relativePath: string } | undefined> {
+        const target = this.gitTargetUri(uri, kind);
+        const cwd = kind === 'file' ? path.dirname(target.fsPath) : target.fsPath;
+
+        try {
+            const { stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], { cwd });
+            const root = stdout.trim();
+            if (!root) return undefined;
+            return { root, relativePath: path.relative(root, target.fsPath) || '.' };
+        } catch {
+            vscode.window.showErrorMessage('The selected item is not inside a Git repository.');
+            return undefined;
+        }
+    }
+
+    private async runGitForTargets(
+        operation: string,
+        targets: vscode.Uri[],
+        fallbackUri: vscode.Uri,
+        fallbackKind: NodeKind | undefined,
+        argsFactory: (relativePath: string) => string[]
+    ): Promise<void> {
+        const effectiveTargets = targets.length ? targets : [this.gitTargetUri(fallbackUri, fallbackKind)];
+        const seen = new Set<string>();
+
+        for (const target of effectiveTargets) {
+            const targetKind = target.toString() === fallbackUri.toString() ? fallbackKind : undefined;
+            const context = await this.getGitContext(target, targetKind);
+            if (!context) continue;
+
+            const key = `${context.root}\0${context.relativePath}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+
+            try {
+                await execFileAsync('git', argsFactory(context.relativePath), { cwd: context.root });
+            } catch (error: any) {
+                const detail = error?.stderr?.toString().trim() || error?.message || String(error);
+                vscode.window.showErrorMessage(`Git ${operation} failed: ${detail}`);
+                return;
+            }
+        }
+
+        await this.refresh();
+    }
+
+    private gitTrack(targets: vscode.Uri[], uri: vscode.Uri, kind?: NodeKind): Promise<void> {
+        return this.runGitForTargets('track', targets, uri, kind, relative => ['add', '--', relative]);
+    }
+
+    private gitUntrack(targets: vscode.Uri[], uri: vscode.Uri, kind?: NodeKind): Promise<void> {
+        return this.runGitForTargets(
+            'untrack',
+            targets,
+            uri,
+            kind,
+            relative => ['rm', '--cached', '-r', '--ignore-unmatch', '--', relative]
+        );
+    }
+
+    private gitStage(targets: vscode.Uri[], uri: vscode.Uri, kind?: NodeKind): Promise<void> {
+        return this.runGitForTargets('stage', targets, uri, kind, relative => ['add', '--', relative]);
+    }
+
+    private async gitUnstage(uri: vscode.Uri, kind?: NodeKind): Promise<void> {
+        const context = await this.getGitContext(uri, kind);
+        if (!context) return;
+
+        try {
+            await execFileAsync('git', ['restore', '--staged', '--', context.relativePath], { cwd: context.root });
+            await this.refresh();
+        } catch (error: any) {
+            const detail = error?.stderr?.toString().trim() || error?.message || String(error);
+            vscode.window.showErrorMessage(`Git unstage failed: ${detail}`);
+        }
+    }
+
+    private async gitRollback(targets: vscode.Uri[], uri: vscode.Uri, kind?: NodeKind): Promise<void> {
+        const label = kind === 'solutionFolder'
+            ? 'the selected Solution Folder'
+            : `'${path.basename(uri.fsPath)}'`;
+
+        const choice = await vscode.window.showWarningMessage(
+            `Rollback all Git changes for ${label}? This also removes untracked files below the selected item.`,
+            { modal: true },
+            'Rollback'
+        );
+        if (choice !== 'Rollback') return;
+
+        const effectiveTargets = targets.length ? targets : [uri];
+        for (const target of effectiveTargets) {
+            const targetKind = target.toString() === uri.toString() ? kind : undefined;
+            const context = await this.getGitContext(target, targetKind);
+            if (!context) continue;
+
+            try {
+                await execFileAsync(
+                    'git',
+                    ['restore', '--source=HEAD', '--staged', '--worktree', '--', context.relativePath],
+                    { cwd: context.root }
+                );
+                await execFileAsync('git', ['clean', '-fd', '--', context.relativePath], { cwd: context.root });
+            } catch (error: any) {
+                const detail = error?.stderr?.toString().trim() || error?.message || String(error);
+                vscode.window.showErrorMessage(`Git rollback failed: ${detail}`);
+                return;
+            }
+        }
+
+        await this.refresh();
+    }
+
+    private async addExistingItem(
+        uri: vscode.Uri,
+        kind: NodeKind | undefined,
+        solutionFolderPath: string[]
+    ): Promise<void> {
+        const selected = await vscode.window.showOpenDialog({
+            title: 'Add Existing Item',
+            canSelectMany: true,
+            canSelectFiles: true,
+            canSelectFolders: false,
+            openLabel: 'Add'
+        });
+        if (!selected?.length) return;
+
+        if (kind === 'solutionFolder') {
+            if (!solutionFolderPath.length) {
+                vscode.window.showErrorMessage('Could not resolve the selected Solution Folder.');
+                return;
+            }
+            await this.addSolutionItems(uri, solutionFolderPath, selected);
+            await this.refresh();
+            return;
+        }
+
+        if (kind !== 'project' && kind !== 'folder') return;
+        const targetDirectory = this.containerUri(uri, kind);
+        let copied = 0;
+
+        for (const source of selected) {
+            const target = vscode.Uri.joinPath(targetDirectory, path.basename(source.fsPath));
+            if (this.normalizePath(source.fsPath) === this.normalizePath(target.fsPath)) continue;
+
+            let overwrite = false;
+            try {
+                await vscode.workspace.fs.stat(target);
+                const choice = await vscode.window.showWarningMessage(
+                    `'${path.basename(target.fsPath)}' already exists in '${targetDirectory.fsPath}'.`,
+                    { modal: true },
+                    'Replace',
+                    'Skip'
+                );
+                if (choice !== 'Replace') continue;
+                overwrite = true;
+            } catch {
+                // Target does not exist yet.
+            }
+
+            try {
+                await vscode.workspace.fs.copy(source, target, { overwrite });
+                copied++;
+            } catch (error) {
+                vscode.window.showErrorMessage(`Could not add '${path.basename(source.fsPath)}': ${String(error)}`);
+            }
+        }
+
+        if (copied > 0) await this.refresh();
+    }
+
+    private async addSolutionItems(
+        solutionUri: vscode.Uri,
+        folderPath: string[],
+        items: vscode.Uri[]
+    ): Promise<void> {
+        const raw = Buffer.from(await vscode.workspace.fs.readFile(solutionUri)).toString('utf8');
+        const solutionDir = path.dirname(solutionUri.fsPath);
+        const relativeItems = items.map(item => {
+            const relative = path.relative(solutionDir, item.fsPath) || path.basename(item.fsPath);
+            return relative.replace(/\\/g, '/');
+        });
+
+        if (solutionUri.fsPath.toLowerCase().endsWith('.slnx')) {
+            const next = this.addSolutionItemsToSlnx(raw, folderPath, relativeItems);
+            if (next === raw) {
+                vscode.window.showErrorMessage(
+                    `Could not find Solution Folder '${folderPath.join(' / ')}' in the .slnx file.`
+                );
+                return;
+            }
+            await vscode.workspace.fs.writeFile(solutionUri, Buffer.from(next, 'utf8'));
+            return;
+        }
+
+        const guid = this.findSolutionFolderGuid(raw, folderPath);
+        if (!guid) {
+            vscode.window.showErrorMessage(`Could not resolve Solution Folder '${folderPath.join(' / ')}'.`);
+            return;
+        }
+
+        const lineEnding = raw.includes('\r\n') ? '\r\n' : '\n';
+        const escapedGuid = guid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const projectRegex = new RegExp(
+            `(Project\\("\\{[^}]+\\}"\\)\\s*=\\s*"[^"]+",\\s*"[^"]+",\\s*"\\{${escapedGuid}\\}"[\\s\\S]*?)(^EndProject\\s*$)`,
+            'gmi'
+        );
+
+        let changed = false;
+        const next = raw.replace(projectRegex, (_match: string, body: string, endProject: string) => {
+            const existingSection = /ProjectSection\(SolutionItems\)\s*=\s*preProject([\s\S]*?)EndProjectSection/i.exec(body);
+            const existing = new Set<string>();
+
+            if (existingSection) {
+                for (const line of existingSection[1].split(/\r?\n/)) {
+                    const eq = line.indexOf('=');
+                    if (eq >= 0) existing.add(line.slice(0, eq).trim().replace(/\\/g, '/'));
+                }
+            }
+
+            const additions = relativeItems.filter(item => !existing.has(item));
+            if (!additions.length) return `${body}${endProject}`;
+
+            changed = true;
+            const lines = additions
+                .map(item => {
+                    const slnPath = item.replace(/\//g, '\\');
+                    return `\t\t${slnPath} = ${slnPath}${lineEnding}`;
+                })
+                .join('');
+
+            if (existingSection) {
+                const updatedBody = body.replace(
+                    /ProjectSection\(SolutionItems\)\s*=\s*preProject([\s\S]*?)EndProjectSection/i,
+                    section => section.replace(/EndProjectSection/i, `${lines}\tEndProjectSection`)
+                );
+                return `${updatedBody}${endProject}`;
+            }
+
+            return `${body}\tProjectSection(SolutionItems) = preProject${lineEnding}${lines}\tEndProjectSection${lineEnding}${endProject}`;
+        });
+
+        if (!changed) {
+            vscode.window.showInformationMessage('The selected item(s) are already part of the Solution Folder.');
+            return;
+        }
+
+        await vscode.workspace.fs.writeFile(solutionUri, Buffer.from(next, 'utf8'));
+    }
+
+    private addSolutionItemsToSlnx(text: string, folderPath: string[], items: string[]): string {
+        const escapeXml = (value: string): string => value
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        const samePath = (left: string[], right: string[]): boolean =>
+            left.length === right.length && left.every((part, index) => part === right[index]);
+
+        const lineEnding = text.includes('\r\n') ? '\r\n' : '\n';
+        const tokenRegex = /<\/?Folder\b[^>]*>|<File\b[^>]*\/?>/gi;
+        const stack: Array<{ path: string[]; contentStart: number; indent: string }> = [];
+
+        for (const tokenMatch of text.matchAll(tokenRegex)) {
+            const token = tokenMatch[0];
+            const tokenStart = tokenMatch.index ?? 0;
+
+            if (/^<\/Folder/i.test(token)) {
+                const frame = stack.pop();
+                if (!frame || !samePath(frame.path, folderPath)) continue;
+
+                const body = text.slice(frame.contentStart, tokenStart);
+                const existing = new Set<string>();
+                for (const match of body.matchAll(/<File\b[^>]*\bPath="([^"]+)"[^>]*\/?\s*>/gi)) {
+                    existing.add(match[1].replace(/\\/g, '/'));
+                }
+
+                const additions = items.filter(item => !existing.has(item));
+                if (!additions.length) return text;
+
+                const closingLineStart = text.lastIndexOf('\n', tokenStart - 1) + 1;
+                const childIndent = `${frame.indent}  `;
+                const lines = additions
+                    .map(item => `${childIndent}<File Path="${escapeXml(item)}" />`)
+                    .join(lineEnding);
+
+                return `${text.slice(0, closingLineStart)}${lines}${lineEnding}${text.slice(closingLineStart)}`;
+            }
+
+            if (!/^<Folder\b/i.test(token)) continue;
+
+            const name = /\bName="([^"]+)"/i.exec(token)?.[1];
+            const selfClosing = /\/\s*>$/.test(token);
+            if (!name) continue;
+
+            const parentPath = stack.length ? stack[stack.length - 1].path : [];
+            const segments = this.normalizeSolutionFolderName(name);
+            const absolute = /^[\\/]/.test(name);
+            const nextPath = absolute ? segments : [...parentPath, ...segments];
+            const lineStart = text.lastIndexOf('\n', tokenStart - 1) + 1;
+            const indent = text.slice(lineStart, tokenStart);
+
+            if (samePath(nextPath, folderPath) && selfClosing) {
+                const childIndent = `${indent}  `;
+                const lines = items
+                    .map(item => `${childIndent}<File Path="${escapeXml(item)}" />`)
+                    .join(lineEnding);
+                const opening = token.replace(/\/\s*>$/, '>');
+                const replacement = `${opening}${lineEnding}${lines}${lineEnding}${indent}</Folder>`;
+                return `${text.slice(0, tokenStart)}${replacement}${text.slice(tokenStart + token.length)}`;
+            }
+
+            if (!selfClosing) {
+                stack.push({
+                    path: nextPath,
+                    contentStart: tokenStart + token.length,
+                    indent
+                });
+            }
+        }
+
+        return text;
     }
 
     private containerUri(uri: vscode.Uri, kind?: NodeKind): vscode.Uri {

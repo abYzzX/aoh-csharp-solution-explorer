@@ -2,7 +2,7 @@
   "name": "aoh-solution-explorer",
   "displayName": "AOH - Solution Explorer",
   "description": "A Rider-inspired .NET solution explorer for VS Code.",
-  "version": "1.4.0",
+  "version": "1.6.9",
   "publisher": "Abyzz",
   "icon": "media/aoh-logo-icon.png",
   "license": "WTFPL",
@@ -27,7 +27,7 @@
       "aoh-solution-explorer": [
         {
           "id": "aoh.solutionExplorer.view",
-          "name": "Solution"
+          "name": "Solution \u00b7 1.6.8"
         }
       ]
     },
@@ -36,6 +36,11 @@
         "command": "aoh.solutionExplorer.refresh",
         "title": "Refresh",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "aoh.solutionExplorer.createSolution",
+        "title": "Create New Solution...",
+        "icon": "$(new-file)"
       },
       {
         "command": "aoh.solutionExplorer.selectCurrentFile",
@@ -63,31 +68,58 @@
       },
       {
         "command": "aoh.solutionExplorer.newProject",
-        "title": "New Project..."
+        "title": "New Project...",
+        "icon": "$(project)"
       },
       {
         "command": "aoh.solutionExplorer.newSolutionFolder",
-        "title": "New Solution Folder..."
+        "title": "New Solution Folder",
+        "icon": "$(new-folder)"
       },
       {
         "command": "aoh.solutionExplorer.addExistingProject",
-        "title": "Add Existing Project..."
+        "title": "Existing Project...",
+        "icon": "$(project)"
+      },
+      {
+        "command": "aoh.solutionExplorer.addExistingItem",
+        "title": "Existing Item...",
+        "icon": "$(file-add)"
       },
       {
         "command": "aoh.solutionExplorer.newFile",
-        "title": "New File..."
+        "title": "New File...",
+        "icon": "$(new-file)"
       },
       {
         "command": "aoh.solutionExplorer.newFolder",
-        "title": "New Folder..."
+        "title": "New Folder",
+        "icon": "$(new-folder)"
       },
       {
         "command": "aoh.solutionExplorer.newDotNetFile",
-        "title": "New .NET File..."
+        "title": "New .NET File...",
+        "icon": "$(new-file)"
       },
       {
         "command": "aoh.solutionExplorer.addProjectReference",
-        "title": "Add Project Reference..."
+        "title": "Project Reference...",
+        "icon": "$(references)"
+      },
+      {
+        "command": "aoh.solutionExplorer.gitStage",
+        "title": "Stage",
+        "icon": "$(check)"
+      },
+      {
+        "command": "aoh.solutionExplorer.gitUnstage",
+        "title": "Git: Unstage",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "aoh.solutionExplorer.gitRollback",
+        "title": "Rollback",
+        "icon": "$(discard)"
       },
       {
         "command": "aoh.solutionExplorer.buildSolution",
@@ -131,11 +163,13 @@
       },
       {
         "command": "aoh.solutionExplorer.rename",
-        "title": "Rename..."
+        "title": "Rename...",
+        "icon": "$(edit)"
       },
       {
         "command": "aoh.solutionExplorer.delete",
-        "title": "Delete"
+        "title": "Delete",
+        "icon": "$(trash)"
       },
       {
         "command": "aoh.solutionExplorer.copyPath",
@@ -147,11 +181,13 @@
       },
       {
         "command": "aoh.solutionExplorer.openTerminal",
-        "title": "Open in Integrated Terminal"
+        "title": "Integrated Terminal",
+        "icon": "$(terminal)"
       },
       {
         "command": "aoh.solutionExplorer.reveal",
-        "title": "Open Containing Folder"
+        "title": "Containing Folder",
+        "icon": "$(folder-opened)"
       },
       {
         "command": "aoh.solutionExplorer.findInFiles",
@@ -160,6 +196,76 @@
       {
         "command": "aoh.solutionExplorer.replaceInFiles",
         "title": "Replace in Files..."
+      },
+      {
+        "command": "aoh.solutionExplorer.newClass",
+        "title": "Class",
+        "icon": "$(symbol-class)"
+      },
+      {
+        "command": "aoh.solutionExplorer.newInterface",
+        "title": "Interface",
+        "icon": "$(symbol-interface)"
+      },
+      {
+        "command": "aoh.solutionExplorer.newEnum",
+        "title": "Enum",
+        "icon": "$(symbol-enum)"
+      },
+      {
+        "command": "aoh.solutionExplorer.newStruct",
+        "title": "Struct",
+        "icon": "$(symbol-struct)"
+      },
+      {
+        "command": "aoh.solutionExplorer.newRecord",
+        "title": "Record",
+        "icon": "$(symbol-class)"
+      },
+      {
+        "command": "aoh.solutionExplorer.copy",
+        "title": "Copy",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "aoh.solutionExplorer.cut",
+        "title": "Cut",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "aoh.solutionExplorer.paste",
+        "title": "Paste",
+        "icon": "$(files)"
+      },
+      {
+        "command": "aoh.solutionExplorer.copyPathSolution",
+        "title": "Relative to Solution",
+        "icon": "$(file-symlink-file)"
+      },
+      {
+        "command": "aoh.solutionExplorer.copyPathWorkspace",
+        "title": "Relative to Workspace",
+        "icon": "$(file-symlink-file)"
+      },
+      {
+        "command": "aoh.solutionExplorer.copyPathFull",
+        "title": "Full",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "aoh.solutionExplorer.gitTrack",
+        "title": "Track",
+        "icon": "$(add)"
+      },
+      {
+        "command": "aoh.solutionExplorer.gitUntrack",
+        "title": "Untrack",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "aoh.solutionExplorer.showOutput",
+        "title": "Show AOH Solution Explorer Output",
+        "icon": "$(output)"
       }
     ],
     "menus": {
@@ -188,159 +294,142 @@
       "view/item/context": [
         {
           "submenu": "aoh.solutionExplorer.add",
-          "when": "view == aoh.solutionExplorer.view && viewItem =~ /aoh\\.(solution|solutionFolder|project|folder|file)/",
+          "when": "view == aoh.solutionExplorer.view && (viewItem =~ /aoh\\.(solution|solutionFolder|project|folder|file)/ || viewItem == aoh.dependencies)",
           "group": "1_add"
         },
         {
-          "command": "aoh.solutionExplorer.addProjectReference",
-          "when": "view == aoh.solutionExplorer.view && viewItem == aoh.dependencies",
-          "group": "1_add"
-        },
-        {
-          "command": "aoh.solutionExplorer.buildSolution",
-          "when": "view == aoh.solutionExplorer.view && viewItem == aoh.solution",
-          "group": "2_build@1"
-        },
-        {
-          "command": "aoh.solutionExplorer.buildProject",
-          "when": "view == aoh.solutionExplorer.view && viewItem == aoh.project",
-          "group": "2_build@1"
-        },
-        {
-          "command": "aoh.solutionExplorer.publishProject",
-          "when": "view == aoh.solutionExplorer.view && viewItem == aoh.project",
-          "group": "2_build@2"
-        },
-        {
-          "submenu": "aoh.solutionExplorer.advancedBuild",
+          "submenu": "aoh.solutionExplorer.build",
           "when": "view == aoh.solutionExplorer.view && viewItem =~ /aoh\\.(solution|project)/",
-          "group": "2_build@3"
+          "group": "2_build"
         },
         {
           "submenu": "aoh.solutionExplorer.edit",
           "when": "view == aoh.solutionExplorer.view && viewItem =~ /aoh\\.(solution|solutionFolder|project|folder|file)/",
-          "group": "5_edit"
+          "group": "3_edit"
         },
         {
-          "submenu": "aoh.solutionExplorer.copy",
+          "submenu": "aoh.solutionExplorer.copyPath",
+          "when": "view == aoh.solutionExplorer.view && viewItem =~ /aoh\\.(solution|project|folder|file)/",
+          "group": "4_path"
+        },
+        {
+          "submenu": "aoh.solutionExplorer.git",
           "when": "view == aoh.solutionExplorer.view && viewItem =~ /aoh\\.(solution|solutionFolder|project|folder|file)/",
-          "group": "6_copy"
+          "group": "5_git"
         },
         {
           "submenu": "aoh.solutionExplorer.openIn",
           "when": "view == aoh.solutionExplorer.view && viewItem =~ /aoh\\.(solution|project|folder|file)/",
-          "group": "7_open"
-        },
-        {
-          "command": "aoh.solutionExplorer.delete",
-          "when": "view == aoh.solutionExplorer.view && viewItem =~ /aoh\\.(solutionFolder|project)/",
-          "group": "9_delete"
+          "group": "6_open"
         }
       ],
       "aoh.solutionExplorer.add": [
         {
           "command": "aoh.solutionExplorer.newProject",
-          "when": "viewItem =~ /aoh\\.(solution|solutionFolder)/",
-          "group": "1_new@1"
-        },
-        {
-          "command": "aoh.solutionExplorer.newSolutionFolder",
-          "when": "viewItem =~ /aoh\\.(solution|solutionFolder)/",
-          "group": "1_new@2"
+          "when": "viewItem == aoh.solution",
+          "group": "1_solution@1"
         },
         {
           "command": "aoh.solutionExplorer.addExistingProject",
-          "when": "viewItem =~ /aoh\\.(solution|solutionFolder)/",
-          "group": "2_existing"
+          "when": "viewItem == aoh.solution",
+          "group": "1_solution@2"
+        },
+        {
+          "command": "aoh.solutionExplorer.newSolutionFolder",
+          "when": "viewItem == aoh.solution",
+          "group": "2_solution@1"
+        },
+        {
+          "command": "aoh.solutionExplorer.newProject",
+          "when": "viewItem == aoh.solutionFolder",
+          "group": "1_solutionFolder@1"
+        },
+        {
+          "command": "aoh.solutionExplorer.addExistingProject",
+          "when": "viewItem == aoh.solutionFolder",
+          "group": "1_solutionFolder@2"
+        },
+        {
+          "command": "aoh.solutionExplorer.newSolutionFolder",
+          "when": "viewItem == aoh.solutionFolder",
+          "group": "2_solutionFolder@1"
+        },
+        {
+          "command": "aoh.solutionExplorer.addExistingItem",
+          "when": "viewItem == aoh.solutionFolder",
+          "group": "3_solutionFolder@1"
         },
         {
           "command": "aoh.solutionExplorer.newDotNetFile",
           "when": "viewItem =~ /aoh\\.(project|folder|file)/",
-          "group": "1_new@1"
-        },
-        {
-          "command": "aoh.solutionExplorer.newFolder",
-          "when": "viewItem =~ /aoh\\.(project|folder|file)/",
-          "group": "1_new@2"
+          "group": "1_files@1"
         },
         {
           "command": "aoh.solutionExplorer.newFile",
           "when": "viewItem =~ /aoh\\.(project|folder|file)/",
-          "group": "1_new@3"
+          "group": "1_files@2"
+        },
+        {
+          "command": "aoh.solutionExplorer.newFolder",
+          "when": "viewItem =~ /aoh\\.(project|folder|file)/",
+          "group": "1_files@3"
+        },
+        {
+          "command": "aoh.solutionExplorer.newClass",
+          "when": "viewItem =~ /aoh\\.(project|folder|file)/",
+          "group": "2_types@1"
+        },
+        {
+          "command": "aoh.solutionExplorer.newInterface",
+          "when": "viewItem =~ /aoh\\.(project|folder|file)/",
+          "group": "2_types@2"
+        },
+        {
+          "command": "aoh.solutionExplorer.newEnum",
+          "when": "viewItem =~ /aoh\\.(project|folder|file)/",
+          "group": "2_types@3"
+        },
+        {
+          "command": "aoh.solutionExplorer.newStruct",
+          "when": "viewItem =~ /aoh\\.(project|folder|file)/",
+          "group": "2_types@4"
+        },
+        {
+          "command": "aoh.solutionExplorer.newRecord",
+          "when": "viewItem =~ /aoh\\.(project|folder|file)/",
+          "group": "2_types@5"
+        },
+        {
+          "command": "aoh.solutionExplorer.addExistingItem",
+          "when": "viewItem =~ /aoh\\.(project|folder)/",
+          "group": "3_existing@1"
         },
         {
           "command": "aoh.solutionExplorer.addProjectReference",
-          "when": "viewItem == aoh.project",
-          "group": "2_reference"
-        }
-      ],
-      "aoh.solutionExplorer.advancedBuild": [
-        {
-          "command": "aoh.solutionExplorer.rebuildSolution",
-          "when": "viewItem == aoh.solution",
-          "group": "1_build@1"
-        },
-        {
-          "command": "aoh.solutionExplorer.cleanSolution",
-          "when": "viewItem == aoh.solution",
-          "group": "1_build@2"
-        },
-        {
-          "command": "aoh.solutionExplorer.rebuildProject",
-          "when": "viewItem == aoh.project",
-          "group": "1_build@1"
-        },
-        {
-          "command": "aoh.solutionExplorer.cleanProject",
-          "when": "viewItem == aoh.project",
-          "group": "1_build@2"
-        },
-        {
-          "command": "aoh.solutionExplorer.packProject",
-          "when": "viewItem == aoh.project",
-          "group": "2_pack"
+          "when": "viewItem == aoh.dependencies",
+          "group": "1_reference@1"
         }
       ],
       "aoh.solutionExplorer.edit": [
         {
+          "command": "aoh.solutionExplorer.copy",
+          "group": "1_clipboard@1"
+        },
+        {
+          "command": "aoh.solutionExplorer.cut",
+          "group": "1_clipboard@2"
+        },
+        {
+          "command": "aoh.solutionExplorer.paste",
+          "group": "1_clipboard@3"
+        },
+        {
           "command": "aoh.solutionExplorer.rename",
-          "when": "viewItem =~ /aoh\\.(folder|file)/",
-          "group": "1_modify@1"
-        },
-        {
-          "command": "aoh.solutionExplorer.open",
-          "when": "viewItem =~ /aoh\\.(solution|project|file)/",
-          "group": "1_modify@2"
-        },
-        {
-          "command": "aoh.solutionExplorer.openToSide",
-          "when": "viewItem =~ /aoh\\.(solution|project|file)/",
-          "group": "1_modify@3"
-        },
-        {
-          "command": "aoh.solutionExplorer.findInFiles",
-          "when": "viewItem =~ /aoh\\.(solution|solutionFolder|project|folder|file)/",
-          "group": "2_search@1"
-        },
-        {
-          "command": "aoh.solutionExplorer.replaceInFiles",
-          "when": "viewItem =~ /aoh\\.(solution|solutionFolder|project|folder|file)/",
-          "group": "2_search@2"
+          "group": "2_modify@1"
         },
         {
           "command": "aoh.solutionExplorer.delete",
-          "when": "viewItem =~ /aoh\\.(folder|file)/",
-          "group": "3_delete"
-        }
-      ],
-      "aoh.solutionExplorer.copy": [
-        {
-          "command": "aoh.solutionExplorer.copyPath",
-          "group": "1_copy@1"
-        },
-        {
-          "command": "aoh.solutionExplorer.copyRelativePath",
-          "group": "1_copy@2"
+          "group": "2_modify@2"
         }
       ],
       "aoh.solutionExplorer.openIn": [
@@ -367,6 +456,10 @@
           "when": "false"
         },
         {
+          "command": "aoh.solutionExplorer.addExistingItem",
+          "when": "false"
+        },
+        {
           "command": "aoh.solutionExplorer.newFile",
           "when": "false"
         },
@@ -380,6 +473,18 @@
         },
         {
           "command": "aoh.solutionExplorer.addProjectReference",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.gitStage",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.gitUnstage",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.gitRollback",
           "when": "false"
         },
         {
@@ -453,6 +558,122 @@
         {
           "command": "aoh.solutionExplorer.replaceInFiles",
           "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.newClass",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.newInterface",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.newEnum",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.newStruct",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.newRecord",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.copy",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.cut",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.paste",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.copyPathSolution",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.copyPathWorkspace",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.copyPathFull",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.gitTrack",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.gitUntrack",
+          "when": "false"
+        }
+      ],
+      "aoh.solutionExplorer.build": [
+        {
+          "command": "aoh.solutionExplorer.buildSolution",
+          "when": "viewItem == aoh.solution",
+          "group": "1_build@1"
+        },
+        {
+          "command": "aoh.solutionExplorer.rebuildSolution",
+          "when": "viewItem == aoh.solution",
+          "group": "1_build@2"
+        },
+        {
+          "command": "aoh.solutionExplorer.cleanSolution",
+          "when": "viewItem == aoh.solution",
+          "group": "2_clean@1"
+        },
+        {
+          "command": "aoh.solutionExplorer.buildProject",
+          "when": "viewItem == aoh.project",
+          "group": "1_build@1"
+        },
+        {
+          "command": "aoh.solutionExplorer.rebuildProject",
+          "when": "viewItem == aoh.project",
+          "group": "1_build@2"
+        },
+        {
+          "command": "aoh.solutionExplorer.cleanProject",
+          "when": "viewItem == aoh.project",
+          "group": "2_clean@1"
+        }
+      ],
+      "aoh.solutionExplorer.copyPath": [
+        {
+          "command": "aoh.solutionExplorer.copyPathSolution",
+          "group": "1_relative@1"
+        },
+        {
+          "command": "aoh.solutionExplorer.copyPathWorkspace",
+          "group": "1_relative@2"
+        },
+        {
+          "command": "aoh.solutionExplorer.copyPathFull",
+          "group": "2_full@1"
+        }
+      ],
+      "aoh.solutionExplorer.git": [
+        {
+          "command": "aoh.solutionExplorer.gitTrack",
+          "group": "1_track@1"
+        },
+        {
+          "command": "aoh.solutionExplorer.gitUntrack",
+          "group": "1_track@2"
+        },
+        {
+          "command": "aoh.solutionExplorer.gitStage",
+          "group": "2_stage@1"
+        },
+        {
+          "command": "aoh.solutionExplorer.gitRollback",
+          "group": "3_rollback@1"
         }
       ]
     },
@@ -462,20 +683,24 @@
         "label": "Add"
       },
       {
-        "id": "aoh.solutionExplorer.advancedBuild",
-        "label": "Advanced Build Actions"
-      },
-      {
         "id": "aoh.solutionExplorer.edit",
         "label": "Edit"
       },
       {
-        "id": "aoh.solutionExplorer.copy",
-        "label": "Copy Path/Reference..."
-      },
-      {
         "id": "aoh.solutionExplorer.openIn",
         "label": "Open In"
+      },
+      {
+        "id": "aoh.solutionExplorer.build",
+        "label": "Build"
+      },
+      {
+        "id": "aoh.solutionExplorer.copyPath",
+        "label": "Copy File Path"
+      },
+      {
+        "id": "aoh.solutionExplorer.git",
+        "label": "Git"
       }
     ]
   },
@@ -488,5 +713,57 @@
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.90.0",
     "typescript": "^5.6.0"
-  }
+  },
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:aoh.solutionExplorer.view",
+    "onCommand:aoh.solutionExplorer.refresh",
+    "onCommand:aoh.solutionExplorer.createSolution",
+    "onCommand:aoh.solutionExplorer.selectCurrentFile",
+    "onCommand:aoh.solutionExplorer.enableFollowEditor",
+    "onCommand:aoh.solutionExplorer.disableFollowEditor",
+    "onCommand:aoh.solutionExplorer.newProject",
+    "onCommand:aoh.solutionExplorer.newSolutionFolder",
+    "onCommand:aoh.solutionExplorer.addExistingProject",
+    "onCommand:aoh.solutionExplorer.addExistingItem",
+    "onCommand:aoh.solutionExplorer.newFile",
+    "onCommand:aoh.solutionExplorer.newFolder",
+    "onCommand:aoh.solutionExplorer.newDotNetFile",
+    "onCommand:aoh.solutionExplorer.addProjectReference",
+    "onCommand:aoh.solutionExplorer.gitStage",
+    "onCommand:aoh.solutionExplorer.gitUnstage",
+    "onCommand:aoh.solutionExplorer.gitRollback",
+    "onCommand:aoh.solutionExplorer.buildSolution",
+    "onCommand:aoh.solutionExplorer.rebuildSolution",
+    "onCommand:aoh.solutionExplorer.cleanSolution",
+    "onCommand:aoh.solutionExplorer.buildProject",
+    "onCommand:aoh.solutionExplorer.rebuildProject",
+    "onCommand:aoh.solutionExplorer.cleanProject",
+    "onCommand:aoh.solutionExplorer.packProject",
+    "onCommand:aoh.solutionExplorer.publishProject",
+    "onCommand:aoh.solutionExplorer.open",
+    "onCommand:aoh.solutionExplorer.openToSide",
+    "onCommand:aoh.solutionExplorer.rename",
+    "onCommand:aoh.solutionExplorer.delete",
+    "onCommand:aoh.solutionExplorer.copyPath",
+    "onCommand:aoh.solutionExplorer.copyRelativePath",
+    "onCommand:aoh.solutionExplorer.openTerminal",
+    "onCommand:aoh.solutionExplorer.reveal",
+    "onCommand:aoh.solutionExplorer.findInFiles",
+    "onCommand:aoh.solutionExplorer.replaceInFiles",
+    "onCommand:aoh.solutionExplorer.newClass",
+    "onCommand:aoh.solutionExplorer.newInterface",
+    "onCommand:aoh.solutionExplorer.newEnum",
+    "onCommand:aoh.solutionExplorer.newStruct",
+    "onCommand:aoh.solutionExplorer.newRecord",
+    "onCommand:aoh.solutionExplorer.copy",
+    "onCommand:aoh.solutionExplorer.cut",
+    "onCommand:aoh.solutionExplorer.paste",
+    "onCommand:aoh.solutionExplorer.copyPathSolution",
+    "onCommand:aoh.solutionExplorer.copyPathWorkspace",
+    "onCommand:aoh.solutionExplorer.copyPathFull",
+    "onCommand:aoh.solutionExplorer.gitTrack",
+    "onCommand:aoh.solutionExplorer.gitUntrack",
+    "onCommand:aoh.solutionExplorer.showOutput"
+  ]
 }
