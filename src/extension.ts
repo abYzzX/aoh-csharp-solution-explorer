@@ -128,11 +128,20 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             case 'solution':
                 item.iconPath = vscode.Uri.file(path.join(__dirname, '..', 'media', 'solution.svg'));
                 break;
-            case 'project':
-                item.iconPath = vscode.Uri.file(path.join(__dirname, '..', 'media', 'csharp-project.svg'));
+            case 'project': {
+                const projectExtension = element.uri
+                    ? path.extname(vscode.Uri.parse(element.uri).fsPath).toLowerCase()
+                    : '';
+
+                const projectIcon = projectExtension === '.vbproj'
+                    ? 'vbnet-project.svg'
+                    : 'csharp-project.svg';
+
+                item.iconPath = vscode.Uri.file(path.join(__dirname, '..', 'media', projectIcon));
                 break;
+            }
             case 'solutionFolder':
-                item.iconPath = new vscode.ThemeIcon('folder');
+                item.iconPath = vscode.Uri.file(path.join(__dirname, '..', 'media', 'solution-folder.svg'));
                 break;
             case 'dependencies':
                 item.iconPath = vscode.Uri.file(path.join(__dirname, '..', 'media', 'dependencies.svg'));
