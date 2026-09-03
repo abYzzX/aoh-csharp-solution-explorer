@@ -122,13 +122,20 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             item.iconPath = vscode.ThemeIcon.File;
         }
 
-        // Virtual nodes need an explicit icon; physical resources deliberately do not.
+        // AOH-specific structural nodes use the extension's own icons.
+        // Regular files and folders continue to use the active VS Code file icon theme.
         switch (element.kind) {
+            case 'solution':
+                item.iconPath = vscode.Uri.file(path.join(__dirname, '..', 'media', 'solution.svg'));
+                break;
+            case 'project':
+                item.iconPath = vscode.Uri.file(path.join(__dirname, '..', 'media', 'csharp-project.svg'));
+                break;
             case 'solutionFolder':
                 item.iconPath = new vscode.ThemeIcon('folder');
                 break;
             case 'dependencies':
-                item.iconPath = new vscode.ThemeIcon('references');
+                item.iconPath = vscode.Uri.file(path.join(__dirname, '..', 'media', 'dependencies.svg'));
                 break;
             case 'dependencyGroup':
                 item.iconPath = element.label === 'Packages'
