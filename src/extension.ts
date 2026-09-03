@@ -3,6 +3,7 @@ import * as path from 'path';
 import { ContextMenuService } from './contextMenuService';
 import { GitStatusService } from './gitStatusService';
 import { NodeKind, ParsedProject, ParsedSolutionFolder, ParsedSolution, WebNode, DependencyRef } from './types';
+import { AohProjectInfo, AohSolutionExplorerApi, AohSolutionInfo, AohSolutionState } from './api';
 
 // Bootstrap diagnostics are created at module load so an absent channel means
 // VS Code never loaded this runtime file.
@@ -16,6 +17,9 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
     private readonly gitStatusService: GitStatusService;
     private readonly contextMenuService: ContextMenuService;
     private roots: WebNode[] | undefined;
+    private parsedSolutions: ParsedSolution[] = [];
+    private readonly solutionStateChanged = new vscode.EventEmitter<void>();
+    readonly onDidChangeSolutionState = this.solutionStateChanged.event;
     private readonly parentById = new Map<string, WebNode>();
     private readonly fileByPath = new Map<string, WebNode>();
 
@@ -29,6 +33,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
         this.roots = await this.buildRoots();
         this.rebuildIndexes();
         this.changed.fire();
+        this.solutionStateChanged.fire();
     }
 
     async findFile(uri: vscode.Uri): Promise<WebNode | undefined> {
@@ -45,6 +50,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             await this.gitStatusService.load();
             this.roots = await this.buildRoots();
             this.rebuildIndexes();
+            this.solutionStateChanged.fire();
         }
 
         return this.roots;
@@ -196,8 +202,99 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
         });
     }
 
+
+    getState(): AohSolutionState {
+        const activeProject = this.getActiveProject();
+        const solution = this.getCurrentSolution(activeProject);
+
+        return {
+            solution: solution ? this.toApiSolution(solution) : undefined,
+            activeProject
+        };
+    }
+
+    getActiveProject(): AohProjectInfo | undefined {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor || editor.document.uri.scheme !== 'file') return undefined;
+        return this.getProjectForFile(editor.document.uri);
+    }
+
+    getProjectForFile(file: vscode.Uri): AohProjectInfo | undefined {
+        if (file.scheme !== 'file') return undefined;
+
+        const filePath = this.normalizeFsPath(file.fsPath);
+        let bestMatch: { project: ParsedProject; rootLength: number } | undefined;
+
+        for (const solution of this.parsedSolutions) {
+            for (const project of solution.projects) {
+                const root = this.normalizeFsPath(project.projectRoot.fsPath);
+                const relative = path.relative(root, filePath);
+                const inside = relative === '' || (
+                    relative !== '..' &&
+                    !relative.startsWith(`..${path.sep}`) &&
+                    !path.isAbsolute(relative)
+                );
+
+                if (!inside) continue;
+
+                if (!bestMatch || root.length > bestMatch.rootLength) {
+                    bestMatch = { project, rootLength: root.length };
+                }
+            }
+        }
+
+        return bestMatch ? this.toApiProject(bestMatch.project) : undefined;
+    }
+
+    private getCurrentSolution(activeProject?: AohProjectInfo): ParsedSolution | undefined {
+        if (!this.parsedSolutions.length) return undefined;
+
+        if (activeProject) {
+            const projectPath = this.normalizeFsPath(activeProject.uri.fsPath);
+            const matching = this.parsedSolutions.find(solution =>
+                solution.projects.some(project =>
+                    this.normalizeFsPath(project.projectUri.fsPath) === projectPath
+                )
+            );
+            if (matching) return matching;
+        }
+
+        return this.parsedSolutions[0];
+    }
+
+    private toApiSolution(solution: ParsedSolution): AohSolutionInfo {
+        return {
+            name: solution.name,
+            uri: solution.uri,
+            directory: vscode.Uri.file(path.dirname(solution.uri.fsPath)),
+            format: solution.uri.fsPath.toLowerCase().endsWith('.slnx') ? 'slnx' : 'sln',
+            projects: solution.projects.map(project => this.toApiProject(project)),
+            solutionFolders: solution.folders.map(folder => ({ path: [...folder.path] }))
+        };
+    }
+
+    private toApiProject(project: ParsedProject): AohProjectInfo {
+        const extension = path.extname(project.projectUri.fsPath).toLowerCase();
+        const language = extension === '.csproj'
+            ? 'csharp'
+            : extension === '.fsproj'
+                ? 'fsharp'
+                : extension === '.vbproj'
+                    ? 'vb'
+                    : 'unknown';
+
+        return {
+            name: project.name,
+            uri: project.projectUri,
+            directory: project.projectRoot,
+            language,
+            solutionFolder: project.solutionFolderPath?.join('/') || undefined
+        };
+    }
+
     private async buildRoots(): Promise<WebNode[]> {
         const solutions = await this.findSolutions();
+        this.parsedSolutions = solutions;
 
         if (!solutions.length) {
             return [{
@@ -905,7 +1002,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
 }
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<AohSolutionExplorerApi> {
     const output = bootstrapOutput;
     context.subscriptions.push(output);
 
@@ -924,6 +1021,8 @@ export function activate(context: vscode.ExtensionContext): void {
     let tree: vscode.TreeView<WebNode> | undefined;
     const followEditorStateKey = 'aoh.solutionExplorer.followEditor';
     let followEditor = context.workspaceState.get<boolean>(followEditorStateKey, false);
+    const apiStateChanged = new vscode.EventEmitter<AohSolutionState>();
+    context.subscriptions.push(apiStateChanged);
 
     const getProvider = (): SolutionExplorerTreeDataProvider => {
         if (!provider) throw new Error('AOH Solution Explorer is not initialized.');
@@ -1035,14 +1134,23 @@ export function activate(context: vscode.ExtensionContext): void {
 
     try {
         provider = new SolutionExplorerTreeDataProvider(log);
+        await provider.refresh();
+
         tree = vscode.window.createTreeView('aoh.solutionExplorer.view', {
             treeDataProvider: provider,
             showCollapseAll: true
         });
 
         context.subscriptions.push(
+            provider.onDidChangeSolutionState(() => apiStateChanged.fire(provider!.getState()))
+        );
+
+        context.subscriptions.push(
             tree,
-            vscode.window.onDidChangeActiveTextEditor(() => { if (followEditor) void selectCurrentFile(); }),
+            vscode.window.onDidChangeActiveTextEditor(() => {
+                if (followEditor) void selectCurrentFile();
+                if (provider) apiStateChanged.fire(provider.getState());
+            }),
             vscode.workspace.onDidCreateFiles(async () => { await provider!.refresh(); if (followEditor) await selectCurrentFile(); }),
             vscode.workspace.onDidDeleteFiles(() => provider!.refresh()),
             vscode.workspace.onDidRenameFiles(async () => { await provider!.refresh(); if (followEditor) await selectCurrentFile(); }),
@@ -1060,6 +1168,17 @@ export function activate(context: vscode.ExtensionContext): void {
         output.show(true);
         vscode.window.showErrorMessage('AOH Solution Explorer initialization failed. See Output > AOH Solution Explorer.');
     }
+
+    const api: AohSolutionExplorerApi = {
+        version: 1,
+        getState: () => provider?.getState() ?? {},
+        onDidChangeState: listener => apiStateChanged.event(listener),
+        getActiveProject: () => provider?.getActiveProject(),
+        getProjectForFile: file => provider?.getProjectForFile(file)
+    };
+
+    log('Public API v1 ready.');
+    return api;
 }
 
 export function deactivate(): void {}

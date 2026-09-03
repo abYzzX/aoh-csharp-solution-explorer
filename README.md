@@ -147,3 +147,18 @@ The goal is to build on what VS Code already does well and fill the gaps that be
 ## License
 
 MIT
+
+## Extension API
+
+AOH Solution Explorer 1.9.0 exposes a small optional API for other AOH extensions.
+Consumers should activate `Abyzz.aoh-solution-explorer` and use the returned API object.
+
+API v1 provides:
+
+- `getState()` - current solution and active project.
+- `onDidChangeState(listener)` - solution/project context changes.
+- `getActiveProject()` - project containing the active editor file.
+- `getProjectForFile(uri)` - project containing a file.
+
+The API is intentionally independent of the TreeView UI.
+

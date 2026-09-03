@@ -2,7 +2,7 @@
   "name": "aoh-solution-explorer",
   "displayName": "AOH - Solution Explorer",
   "description": "A Rider-inspired .NET solution explorer for VS Code.",
-  "version": "1.8.1",
+  "version": "1.9.0",
   "publisher": "Abyzz",
   "icon": "media/aoh-logo-icon.png",
   "license": "WTFPL",

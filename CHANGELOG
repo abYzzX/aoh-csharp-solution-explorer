@@ -1,3 +1,8 @@
+1.9.0
+- Add public Solution Explorer API v1 for other AOH extensions.
+- Expose current solution state, active project, project lookup by file, and state-change notifications.
+- API reports solution format, project language, project directories, and solution-folder membership.
+
 1.7.0
 - Remove version number from the Solution Explorer tab title.
 - Prompt for a type name when creating Class/Interface/Enum/Struct/Record files.
