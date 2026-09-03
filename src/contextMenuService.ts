@@ -549,27 +549,111 @@ export class ContextMenuService {
         directory: vscode.Uri,
         type: 'class' | 'interface' | 'enum' | 'struct' | 'record'
     ): Promise<void> {
-        const defaultName = type === 'interface' ? 'IMyInterface' : `My${type[0].toUpperCase()}${type.slice(1)}`;
+        const displayType = type[0].toUpperCase() + type.slice(1);
         const name = await vscode.window.showInputBox({
-            title: `New ${type[0].toUpperCase()}${type.slice(1)}`,
-            prompt: 'Type name',
-            value: defaultName
+            title: `New ${displayType}`,
+            prompt: `${displayType} name`,
+            placeHolder: type === 'interface' ? 'IMyInterface' : `My${displayType}`,
+            validateInput: value => {
+                const clean = value.trim().replace(/\.cs$/i, '');
+                if (!clean) return 'Enter a name.';
+                if (!/^[@A-Za-z_][A-Za-z0-9_]*$/.test(clean)) return 'Enter a valid C# type name.';
+                return undefined;
+            }
         });
         if (!name?.trim()) return;
 
         const cleanName = name.trim().replace(/\.cs$/i, '');
         const target = vscode.Uri.joinPath(directory, `${cleanName}.cs`);
-        const declaration = type === 'record'
-            ? `public record ${cleanName}\n{\n}\n`
-            : `public ${type} ${cleanName}\n{\n}\n`;
 
         try {
-            await vscode.workspace.fs.writeFile(target, Buffer.from(declaration, 'utf8'));
+            try {
+                await vscode.workspace.fs.stat(target);
+                vscode.window.showErrorMessage(`'${cleanName}.cs' already exists.`);
+                return;
+            } catch {
+                // Expected for a new file.
+            }
+
+            const namespaceName = await this.resolveNamespace(directory);
+            const declaration = type === 'record'
+                ? `public record ${cleanName}\n{\n}\n`
+                : `public ${type} ${cleanName}\n{\n}\n`;
+            const content = namespaceName
+                ? `namespace ${namespaceName};\n\n${declaration}`
+                : declaration;
+
+            await vscode.workspace.fs.writeFile(target, Buffer.from(content, 'utf8'));
             await this.refresh();
             await vscode.window.showTextDocument(target, { preview: false });
         } catch (error) {
             vscode.window.showErrorMessage(`Could not create '${target.fsPath}': ${String(error)}`);
         }
+    }
+
+    private async resolveNamespace(directory: vscode.Uri): Promise<string | undefined> {
+        const projectFile = await this.findContainingCSharpProject(directory);
+        if (!projectFile) {
+            this.log(`Namespace resolution: no .csproj found for ${directory.fsPath}`);
+            return undefined;
+        }
+
+        const projectDirectory = path.dirname(projectFile.fsPath);
+        let rootNamespace = path.basename(projectFile.fsPath, path.extname(projectFile.fsPath));
+
+        try {
+            const projectXml = Buffer.from(await vscode.workspace.fs.readFile(projectFile)).toString('utf8');
+            const match = projectXml.match(/<RootNamespace>([^<]+)<\/RootNamespace>/i);
+            if (match?.[1]?.trim()) rootNamespace = match[1].trim();
+        } catch (error) {
+            this.log(`Namespace resolution: could not read ${projectFile.fsPath}: ${String(error)}`);
+        }
+
+        const relativeDirectory = path.relative(projectDirectory, directory.fsPath);
+        const folderNamespace = relativeDirectory && relativeDirectory !== '.'
+            ? relativeDirectory
+                .split(path.sep)
+                .filter(Boolean)
+                .map(part => this.toNamespaceSegment(part))
+                .filter(Boolean)
+                .join('.')
+            : '';
+
+        const namespaceName = folderNamespace ? `${rootNamespace}.${folderNamespace}` : rootNamespace;
+        this.log(`Namespace resolution: ${directory.fsPath} -> ${namespaceName}`);
+        return namespaceName;
+    }
+
+    private async findContainingCSharpProject(directory: vscode.Uri): Promise<vscode.Uri | undefined> {
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(directory);
+        const workspaceRoot = workspaceFolder?.uri.fsPath;
+        let current = directory.fsPath;
+
+        while (true) {
+            try {
+                const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(current));
+                const project = entries.find(([name, fileType]) =>
+                    fileType === vscode.FileType.File && name.toLowerCase().endsWith('.csproj')
+                );
+                if (project) return vscode.Uri.file(path.join(current, project[0]));
+            } catch {
+                // Keep walking up until the workspace root.
+            }
+
+            if (workspaceRoot && this.normalizePath(current) === this.normalizePath(workspaceRoot)) break;
+            const parent = path.dirname(current);
+            if (parent === current) break;
+            current = parent;
+        }
+
+        return undefined;
+    }
+
+    private toNamespaceSegment(value: string): string {
+        let segment = value.replace(/[^A-Za-z0-9_]/g, '_');
+        if (!segment) return '';
+        if (/^[0-9]/.test(segment)) segment = `_${segment}`;
+        return segment;
     }
 
     private async pasteItems(

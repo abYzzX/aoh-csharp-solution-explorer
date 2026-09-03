@@ -1,3 +1,8 @@
+1.7.0
+- Remove version number from the Solution Explorer tab title.
+- Prompt for a type name when creating Class/Interface/Enum/Struct/Record files.
+- Generate namespaces from RootNamespace/project name plus the target folder path.
+
 ## 1.2.1
 
 - Removed hardcoded keyboard shortcuts. AOH exposes commands and leaves key assignment to the user.
