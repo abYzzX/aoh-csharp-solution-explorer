@@ -2,7 +2,7 @@
   "name": "aoh-solution-explorer",
   "displayName": "AOH - Solution Explorer",
   "description": "A Rider-inspired .NET solution explorer for VS Code.",
-  "version": "1.9.0",
+  "version": "1.11.7",
   "publisher": "Abyzz",
   "icon": "media/aoh-logo-icon.png",
   "license": "WTFPL",
@@ -263,6 +263,22 @@
         "icon": "$(remove)"
       },
       {
+        "command": "aoh.solutionExplorer.showExcludedFiles",
+        "title": "Show Excluded Files",
+        "icon": {
+          "light": "media/show_files.svg",
+          "dark": "media/show_files.svg"
+        }
+      },
+      {
+        "command": "aoh.solutionExplorer.hideExcludedFiles",
+        "title": "Hide Excluded Files",
+        "icon": {
+          "light": "media/hide_files.svg",
+          "dark": "media/hide_files.svg"
+        }
+      },
+      {
         "command": "aoh.solutionExplorer.showOutput",
         "title": "Show AOH Solution Explorer Output",
         "icon": "$(output)"
@@ -286,9 +302,19 @@
           "group": "navigation@2"
         },
         {
+          "command": "aoh.solutionExplorer.showExcludedFiles",
+          "when": "view == aoh.solutionExplorer.view && !aoh.solutionExplorer.showExcludedFiles",
+          "group": "navigation@3"
+        },
+        {
+          "command": "aoh.solutionExplorer.hideExcludedFiles",
+          "when": "view == aoh.solutionExplorer.view && aoh.solutionExplorer.showExcludedFiles",
+          "group": "navigation@3"
+        },
+        {
           "command": "aoh.solutionExplorer.refresh",
           "when": "view == aoh.solutionExplorer.view",
-          "group": "navigation@3"
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -702,7 +728,23 @@
         "id": "aoh.solutionExplorer.git",
         "label": "Git"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "AOH Solution Explorer",
+      "properties": {
+        "aoh.solutionExplorer.exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "bin",
+            "obj"
+          ],
+          "description": "Glob patterns for files and folders hidden in the AOH Solution Explorer. Use the toolbar toggle to temporarily show excluded items."
+        }
+      }
+    }
   },
   "scripts": {
     "compile": "tsc -p ./",
@@ -764,6 +806,8 @@
     "onCommand:aoh.solutionExplorer.copyPathFull",
     "onCommand:aoh.solutionExplorer.gitTrack",
     "onCommand:aoh.solutionExplorer.gitUntrack",
-    "onCommand:aoh.solutionExplorer.showOutput"
+    "onCommand:aoh.solutionExplorer.showOutput",
+    "onCommand:aoh.solutionExplorer.showExcludedFiles",
+    "onCommand:aoh.solutionExplorer.hideExcludedFiles"
   ]
 }

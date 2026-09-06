@@ -36,7 +36,7 @@ export class GitStatusService {
                     }
 
                     this.status.set(
-                        path.normalize(path.resolve(folder.uri.fsPath, relativePath)),
+                        this.normalize(path.resolve(folder.uri.fsPath, relativePath)),
                         this.mapGitStatus(xy)
                     );
                 }
@@ -44,6 +44,37 @@ export class GitStatusService {
                 // Git is optional.
             }
         }
+    }
+
+    getStrongestUnder(rootPath: string): GitFileState | undefined {
+        const normalizedRoot = this.normalize(rootPath);
+        let strongest: GitFileState | undefined;
+
+        for (const [filePath, state] of this.status) {
+            const normalizedFile = this.normalize(filePath);
+            if (normalizedFile !== normalizedRoot && !normalizedFile.startsWith(normalizedRoot + path.sep)) continue;
+
+            if (!strongest || this.priority(state) > this.priority(strongest)) {
+                strongest = state;
+            }
+        }
+
+        return strongest;
+    }
+
+    private priority(state: GitFileState): number {
+        switch (state) {
+            case 'conflict': return 5;
+            case 'deleted': return 4;
+            case 'modified': return 3;
+            case 'renamed': return 2;
+            case 'added': return 1;
+        }
+    }
+
+    private normalize(value: string): string {
+        const normalized = path.normalize(value);
+        return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
     }
 
     private mapGitStatus(xy: string): GitFileState {

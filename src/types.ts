@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 export type GitFileState = 'modified' | 'added' | 'deleted' | 'renamed' | 'conflict';
+export type DiagnosticState = 'error' | 'warning';
 export type NodeKind =
     | 'solution'
     | 'solutionFolder'
@@ -40,6 +41,10 @@ export interface WebNode {
     solutionFolderPath?: string[];
     solutionUri?: string;
     gitState?: GitFileState;
+    diagnosticState?: DiagnosticState;
+    errorCount?: number;
+    warningCount?: number;
+    decorationUri?: string;
     icon?: { type: 'path'; uri: string } | { type: 'font'; fontId: string; character: string; color?: string; size?: string };
     expanded?: boolean;
     children?: WebNode[];

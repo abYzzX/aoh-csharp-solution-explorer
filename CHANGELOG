@@ -1,3 +1,57 @@
+## 1.11.6
+
+- Diagnostic symbols are now rendered only as native VS Code file-decoration badges.
+- Removed the inline diagnostic fallback from `TreeItem.description`; badges therefore stay right-aligned at the edge of the tree.
+- Git coloring remains disabled.
+
+1.11.5
+- Fix diagnostic propagation for tree nodes sharing the same backing URI by assigning every node a unique decoration URI.
+- Keep diagnostics as the only AOH text coloring: errors red, warnings yellow.
+- Add a compact description fallback when VS Code native explorer decoration badges are disabled.
+
+## 1.11.4
+
+- Removed AOH Git text coloring from the Solution Explorer.
+- Diagnostics now use native right-aligned VS Code decoration badges.
+- Error badges use `problemsErrorIcon.foreground`; warning badges use `problemsWarningIcon.foreground`.
+- Removed the duplicate diagnostic symbol from the TreeItem description column.
+
+## 1.11.3
+
+- Diagnostics are now shown directly in the TreeItem description column (`✕` for errors, `⚠` for warnings).
+- Diagnostic indicators no longer depend on VS Code's global `explorer.decorations.badges` setting.
+- Git status remains represented exclusively by the node text color.
+
+# 1.11.2
+
+- Reworked diagnostics lookup to index diagnostics by both URI and normalized filesystem path.
+- Accept diagnostics from non-`file` URI schemes as well, which is important for remote/workspace language servers.
+- Query VS Code directly for the exact document URI before using cached diagnostic data.
+- Use one Explorer decoration provider for both channels: Git remains the node text color, diagnostics remain the right-hand symbol.
+- Diagnostics continue to propagate from files through folders/projects/solution folders up to the solution.
+
+# 1.11.1
+
+- Fixed diagnostics lookup by querying VS Code diagnostics with the exact file URI before falling back to normalized paths.
+- Split Explorer decorations into independent Git and Diagnostics providers.
+- Git decorations now control only the node text color.
+- Diagnostics now use a symbol in the right-hand decoration column: `✕` for errors and `⚠` for warnings.
+- Error/warning state continues to propagate from files through folders/projects/solution folders up to the solution.
+
+# 1.11.0
+
+- Propagate Git status from files up through folders, projects, solution folders, and solutions.
+- Propagate VS Code diagnostics (errors/warnings) through the same hierarchy.
+- Keep Git and diagnostics visually distinct: Git controls the node color; diagnostics use `E` / `W` badges.
+- Refresh diagnostic decorations when VS Code diagnostics change.
+
+# 1.10.0
+
+- Added `aoh.solutionExplorer.exclude` for configurable file/folder exclusion patterns.
+- Added a temporary Show/Hide Excluded Files toolbar toggle using the AOH show/hide file icons.
+- `bin` and `obj` are excluded by default.
+- Exclude configuration changes refresh the Solution Explorer automatically.
+
 1.9.0
 - Add public Solution Explorer API v1 for other AOH extensions.
 - Expose current solution state, active project, project lookup by file, and state-change notifications.
@@ -294,3 +348,11 @@ Changes to `explorer.fileNesting` refresh the AOH Solution Explorer automaticall
 - Rebased on full 1.4.0 TypeScript source tree.
 - Source is now shipped with releases.
 - Added AOH output diagnostics and current context-menu commands in TypeScript.
+
+
+## 1.11.7
+
+- Removed diagnostic badges from the Solution Explorer.
+- Restored Git status colors for files and propagated parent nodes.
+- Error diagnostics now override Git coloring on the affected node and all propagated parents.
+- Warning diagnostics are intentionally ignored by the Solution Explorer.

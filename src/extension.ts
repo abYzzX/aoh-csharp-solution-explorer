@@ -2,7 +2,9 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { ContextMenuService } from './contextMenuService';
 import { GitStatusService } from './gitStatusService';
-import { NodeKind, ParsedProject, ParsedSolutionFolder, ParsedSolution, WebNode, DependencyRef } from './types';
+import { DiagnosticService } from './diagnosticService';
+import { ExplorerDecorationService } from './decorationService';
+import { NodeKind, ParsedProject, ParsedSolutionFolder, ParsedSolution, WebNode, DependencyRef, GitFileState } from './types';
 import { AohProjectInfo, AohSolutionExplorerApi, AohSolutionInfo, AohSolutionState } from './api';
 
 // Bootstrap diagnostics are created at module load so an absent channel means
@@ -16,12 +18,14 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
     private readonly gitStatusService: GitStatusService;
     private readonly contextMenuService: ContextMenuService;
+    private readonly diagnosticService = new DiagnosticService();
     private roots: WebNode[] | undefined;
     private parsedSolutions: ParsedSolution[] = [];
     private readonly solutionStateChanged = new vscode.EventEmitter<void>();
     readonly onDidChangeSolutionState = this.solutionStateChanged.event;
     private readonly parentById = new Map<string, WebNode>();
     private readonly fileByPath = new Map<string, WebNode>();
+    private showExcludedFiles = false;
 
     constructor(log: (message: string) => void = () => {}) {
         this.gitStatusService = new GitStatusService();
@@ -30,10 +34,18 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
     async refresh(): Promise<void> {
         await this.gitStatusService.load();
+        this.diagnosticService.load();
         this.roots = await this.buildRoots();
+        this.applyAggregatedState(this.roots);
         this.rebuildIndexes();
         this.changed.fire();
         this.solutionStateChanged.fire();
+    }
+
+    async setShowExcludedFiles(show: boolean): Promise<void> {
+        if (this.showExcludedFiles === show) return;
+        this.showExcludedFiles = show;
+        await this.refresh();
     }
 
     async findFile(uri: vscode.Uri): Promise<WebNode | undefined> {
@@ -48,7 +60,9 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
     private async ensureRoots(): Promise<WebNode[]> {
         if (!this.roots) {
             await this.gitStatusService.load();
+            this.diagnosticService.load();
             this.roots = await this.buildRoots();
+            this.applyAggregatedState(this.roots);
             this.rebuildIndexes();
             this.solutionStateChanged.fire();
         }
@@ -99,19 +113,27 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
         item.id = element.id;
         item.contextValue = `aoh.${element.kind}`;
+
+        // Decorations only color the node. Errors have priority over Git state;
+        // warnings are intentionally ignored in the Solution Explorer.
         item.description = element.description;
-        item.tooltip = element.description
-            ? `${element.label} ${element.description}`
-            : element.label;
+
+        const diagnosticTooltip = element.errorCount
+            ? `${element.errorCount} error${element.errorCount === 1 ? '' : 's'}`
+            : undefined;
+
+        item.tooltip = [element.label, element.description, diagnosticTooltip]
+            .filter((value): value is string => Boolean(value))
+            .join(' · ');
 
         if (element.uri) {
             const uri = vscode.Uri.parse(element.uri);
 
             // resourceUri lets VS Code apply the active file icon theme and
-            // resource decorations (including SCM/Git decorations) natively.
-            if (element.kind !== 'solutionFolder') {
-                item.resourceUri = uri;
-            }
+            // resource decorations registered by AOH.
+            item.resourceUri = element.decorationUri
+                ? vscode.Uri.parse(element.decorationUri)
+                : uri;
 
             if (element.kind === 'file') {
                 item.command = {
@@ -310,7 +332,8 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             label: `${solution.name} · ${solution.projects.length} project${solution.projects.length === 1 ? '' : 's'}`,
             uri: solution.uri.toString(),
             expanded: true,
-            children: await this.getSolutionChildren(solution)
+            children: await this.getSolutionChildren(solution),
+            gitState: this.gitStatusService.status.get(path.normalize(solution.uri.fsPath))
         })));
     }
 
@@ -448,7 +471,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
         const fsItems = await this.readDirectory(project.projectRoot, name => {
             const lower = name.toLowerCase();
             return lower !== 'properties' && !this.isHiddenInfrastructure(lower);
-        });
+        }, project.projectRoot);
 
         // Intentionally keep the .csproj/.fsproj/.vbproj file visible.
         children.push(...fsItems);
@@ -459,7 +482,8 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             label: project.name,
             uri: project.projectUri.toString(),
             solutionUri: solutionUri.toString(),
-            children
+            children,
+            gitState: this.gitStatusService.getStrongestUnder(project.projectRoot.fsPath)
         };
     }
 
@@ -469,7 +493,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
         try {
             const stat = await vscode.workspace.fs.stat(properties);
             if ((stat.type & vscode.FileType.Directory) === 0) return [];
-            return this.readDirectory(properties);
+            return this.readDirectory(properties, undefined, projectRoot);
         } catch {
             return [];
         }
@@ -538,7 +562,8 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
     private async readDirectory(
         uri: vscode.Uri,
-        include: (name: string) => boolean = name => !this.isHiddenInfrastructure(name)
+        include: ((name: string) => boolean) | undefined = name => !this.isHiddenInfrastructure(name),
+        rootUri: vscode.Uri = uri
     ): Promise<WebNode[]> {
         try {
             const entries = await vscode.workspace.fs.readDirectory(uri);
@@ -546,9 +571,12 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             const files: WebNode[] = [];
 
             for (const [name, type] of entries) {
-                if (!include(name)) continue;
+                if (include && !include(name)) continue;
+                if (this.isHiddenInfrastructure(name)) continue;
 
                 const childUri = vscode.Uri.joinPath(uri, name);
+                const relativePath = path.relative(rootUri.fsPath, childUri.fsPath).replace(/\\/g, '/');
+                if (!this.showExcludedFiles && this.isExcluded(relativePath, name)) continue;
 
                 if (type === vscode.FileType.Directory) {
                     folders.push({
@@ -556,7 +584,8 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
                         kind: 'folder',
                         label: name,
                         uri: childUri.toString(),
-                        children: await this.readDirectory(childUri)
+                        gitState: this.gitStatusService.getStrongestUnder(childUri.fsPath),
+                        children: await this.readDirectory(childUri, undefined, rootUri)
                     });
                 } else if (type === vscode.FileType.File) {
                     files.push(this.makeFileNode(childUri));
@@ -731,8 +760,82 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             kind: 'file',
             label: path.basename(uri.fsPath),
             uri: uri.toString(),
-            gitState: this.gitStatusService.status.get(path.normalize(uri.fsPath))
+            gitState: this.gitStatusService.status.get(path.normalize(uri.fsPath)),
+            ...this.toDiagnosticFields(this.diagnosticService.get(uri))
         };
+    }
+
+
+    private applyAggregatedState(roots: WebNode[]): void {
+        const visit = (node: WebNode): { gitState?: GitFileState; errors: number } => {
+            let gitState = node.gitState;
+            let errors = node.errorCount ?? 0;
+
+            for (const child of node.children ?? []) {
+                const childState = visit(child);
+                gitState = this.strongerGitState(gitState, childState.gitState);
+                errors += childState.errors;
+            }
+
+            node.gitState = gitState;
+            node.errorCount = errors;
+            node.warningCount = 0;
+            node.diagnosticState = errors > 0 ? 'error' : undefined;
+            node.decorationUri = this.createDecorationUri(node);
+
+            return { gitState, errors };
+        };
+
+        for (const root of roots) visit(root);
+    }
+
+    private strongerGitState(left?: GitFileState, right?: GitFileState): GitFileState | undefined {
+        if (!left) return right;
+        if (!right) return left;
+        return this.gitPriority(right) > this.gitPriority(left) ? right : left;
+    }
+
+    private gitPriority(state: GitFileState): number {
+        switch (state) {
+            case 'conflict': return 5;
+            case 'deleted': return 4;
+            case 'modified': return 3;
+            case 'renamed': return 2;
+            case 'added': return 1;
+        }
+    }
+
+    private toDiagnosticFields(summary?: { errors: number; warnings: number }): Partial<WebNode> {
+        if (!summary) return {};
+        return {
+            errorCount: summary.errors,
+            warningCount: 0,
+            diagnosticState: summary.errors > 0 ? 'error' : undefined
+        };
+    }
+
+    private createDecorationUri(node: WebNode): string {
+        // Every tree node needs its own decoration resource. Multiple structural
+        // nodes can legitimately point at the same backing file (for example a
+        // project and its Dependencies node both use the .csproj URI). If they
+        // share the same decoration URI, the later node overwrites the former in
+        // ExplorerDecorationService and parent diagnostics appear to vanish.
+        //
+        // Keep the original path where possible so file icon themes can still
+        // infer the extension, but add the node id as a unique query component.
+        if (node.uri) {
+            const uri = vscode.Uri.parse(node.uri);
+            return uri.with({
+                scheme: 'aoh-solution-explorer',
+                query: `node=${encodeURIComponent(node.id)}`
+            }).toString();
+        }
+
+        return vscode.Uri.from({
+            scheme: 'aoh-solution-explorer',
+            path: '/' + encodeURIComponent(node.id),
+            query: `node=${encodeURIComponent(node.id)}`
+        }).toString();
     }
 
     private async findProjectFile(root: vscode.Uri): Promise<vscode.Uri | undefined> {
@@ -995,8 +1098,37 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
 
 
+    private isExcluded(relativePath: string, name: string): boolean {
+        const patterns = vscode.workspace
+            .getConfiguration('aoh.solutionExplorer')
+            .get<string[]>('exclude', ['bin', 'obj']);
+
+        return patterns.some(pattern => {
+            const normalized = pattern.trim().replace(/\\/g, '/');
+            if (!normalized) return false;
+
+            const candidates = normalized.startsWith('**/')
+                ? [normalized, normalized.slice(3)]
+                : [normalized];
+
+            return candidates.some(candidate =>
+                this.matchesGlob(name, candidate) || this.matchesGlob(relativePath, candidate)
+            );
+        });
+    }
+
+    private matchesGlob(value: string, pattern: string): boolean {
+        const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+        const regex = escaped
+            .replace(/\*\*/g, '§§DOUBLESTAR§§')
+            .replace(/\*/g, '[^/]*')
+            .replace(/\?/g, '[^/]')
+            .replace(/§§DOUBLESTAR§§/g, '.*');
+        return new RegExp(`^${regex}$`, 'i').test(value);
+    }
+
     private isHiddenInfrastructure(name: string): boolean {
-        return ['bin', 'obj', '.git', '.vs', '.idea', 'node_modules']
+        return ['.git', '.vs', '.idea', 'node_modules']
             .includes(name.toLowerCase());
     }
 
@@ -1019,8 +1151,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
 
     let provider: SolutionExplorerTreeDataProvider | undefined;
     let tree: vscode.TreeView<WebNode> | undefined;
+    const decorationService = new ExplorerDecorationService();
     const followEditorStateKey = 'aoh.solutionExplorer.followEditor';
     let followEditor = context.workspaceState.get<boolean>(followEditorStateKey, false);
+    let showExcludedFiles = false;
     const apiStateChanged = new vscode.EventEmitter<AohSolutionState>();
     context.subscriptions.push(apiStateChanged);
 
@@ -1031,6 +1165,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
 
     const updateFollowContext = async (): Promise<void> => {
         await vscode.commands.executeCommand('setContext', 'aoh.solutionExplorer.followEditor', followEditor);
+    };
+
+    const updateExcludedFilesContext = async (): Promise<void> => {
+        await vscode.commands.executeCommand('setContext', 'aoh.solutionExplorer.showExcludedFiles', showExcludedFiles);
     };
 
     const selectCurrentFile = async (): Promise<void> => {
@@ -1084,6 +1222,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
     register('aoh.solutionExplorer.selectCurrentFile', selectCurrentFile);
     register('aoh.solutionExplorer.enableFollowEditor', () => setFollowEditor(true));
     register('aoh.solutionExplorer.disableFollowEditor', () => setFollowEditor(false));
+    register('aoh.solutionExplorer.showExcludedFiles', async () => {
+        showExcludedFiles = true;
+        await updateExcludedFilesContext();
+        await getProvider().setShowExcludedFiles(true);
+    });
+    register('aoh.solutionExplorer.hideExcludedFiles', async () => {
+        showExcludedFiles = false;
+        await updateExcludedFilesContext();
+        await getProvider().setShowExcludedFiles(false);
+    });
 
     for (const [command, actionName] of [
         ['aoh.solutionExplorer.newProject', 'newProject'],
@@ -1131,10 +1279,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
     ] as const) registerAction(command, actionName);
 
     void updateFollowContext();
+    void updateExcludedFilesContext();
 
     try {
         provider = new SolutionExplorerTreeDataProvider(log);
         await provider.refresh();
+        const initialRoots = await provider.getChildren();
+        decorationService.update(initialRoots);
 
         tree = vscode.window.createTreeView('aoh.solutionExplorer.view', {
             treeDataProvider: provider,
@@ -1142,6 +1293,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
         });
 
         context.subscriptions.push(
+            vscode.window.registerFileDecorationProvider(decorationService),
+            provider.onDidChangeTreeData(async () => {
+                const roots = await provider!.getChildren();
+                decorationService.update(roots);
+            }),
             provider.onDidChangeSolutionState(() => apiStateChanged.fire(provider!.getState()))
         );
 
@@ -1155,9 +1311,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
             vscode.workspace.onDidDeleteFiles(() => provider!.refresh()),
             vscode.workspace.onDidRenameFiles(async () => { await provider!.refresh(); if (followEditor) await selectCurrentFile(); }),
             vscode.workspace.onDidSaveTextDocument(() => provider!.refresh()),
+            vscode.languages.onDidChangeDiagnostics(() => provider!.refresh()),
             vscode.workspace.onDidChangeWorkspaceFolders(async () => { await provider!.refresh(); if (followEditor) await selectCurrentFile(); }),
             vscode.workspace.onDidChangeConfiguration((event: vscode.ConfigurationChangeEvent) => {
-                if (event.affectsConfiguration('explorer.fileNesting')) {
+                if (event.affectsConfiguration('explorer.fileNesting') ||
+                    event.affectsConfiguration('aoh.solutionExplorer.exclude')) {
                     void provider!.refresh().then(() => { if (followEditor) return selectCurrentFile(); });
                 }
             })
