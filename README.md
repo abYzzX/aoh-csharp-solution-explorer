@@ -73,6 +73,10 @@ Whenever you switch to another file, the corresponding item is automatically rev
 
 The setting is remembered per workspace.
 
+### Multi-Select
+
+The Solution Explorer supports native VS Code multi-selection. Actions that naturally work on multiple items, such as Copy/Cut, path copying, Git Stage/Unstage/Rollback and deleting files/folders, operate on the current selection.
+
 ### Native VS Code Integration
 
 AOH - Solution Explorer uses VS Code's native Tree View API.
@@ -87,6 +91,19 @@ This means it integrates naturally with:
 - Editor navigation
 
 No custom WebView is used for the Solution Explorer.
+
+## Settings
+
+The extension exposes focused settings for behavior that is useful to tune without turning the Solution Explorer into a configuration project of its own:
+
+- `aoh.solutionExplorer.exclude` - glob patterns hidden from the tree.
+- `aoh.solutionExplorer.colorMode` - Git colors, error colors, both, or none.
+- `aoh.solutionExplorer.git.autoRefresh` - refresh Git colors when repository state changes.
+- `aoh.solutionExplorer.git.refreshDelay` - debounce Git-state refreshes.
+- `aoh.solutionExplorer.delete.confirm` - confirm file/folder deletion.
+- `aoh.solutionExplorer.delete.useTrash` - use the OS trash/recycle bin when deleting.
+
+Git colors use VS Code's `gitDecoration.*ResourceForeground` theme colors, so active theme settings and `workbench.colorCustomizations` are respected. Deleted Git items are intentionally not colored.
 
 ## Requirements
 

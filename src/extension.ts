@@ -237,7 +237,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
         await this.contextMenuService.createSolution();
     }
 
-    async runAction(action: string, element?: WebNode): Promise<void> {
+    async runAction(action: string, element?: WebNode, selectedElements: WebNode[] = []): Promise<void> {
         if (!element?.uri) return;
 
         const collectUris = (node: WebNode): string[] => {
@@ -247,13 +247,28 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             return [...new Set(result)];
         };
 
+        const multiTargetActions = new Set([
+            'copy', 'cut',
+            'copyPath', 'copyRelativePath', 'copyPathSolution', 'copyPathWorkspace', 'copyPathFull',
+            'gitTrack', 'gitUntrack', 'gitStage', 'gitUnstage', 'gitRollback',
+            'delete'
+        ]);
+
+        const canUseMultiSelection = multiTargetActions.has(action) && selectedElements.length > 1 &&
+            (action !== 'delete' || selectedElements.every(node => node.kind === 'file' || node.kind === 'folder'));
+        const selected = canUseMultiSelection ? selectedElements : [element];
+
+        const targetUris = [...new Set(selected.flatMap(node =>
+            node.kind === 'solutionFolder' ? collectUris(node) : (node.uri ? [node.uri] : [])
+        ))];
+
         await this.contextMenuService.handleAction({
             action,
             uri: element.uri,
             kind: element.kind,
             solutionFolderPath: element.solutionFolderPath,
             solutionUri: element.solutionUri,
-            targetUris: element.kind === 'solutionFolder' ? collectUris(element) : [element.uri]
+            targetUris
         });
     }
 
@@ -856,6 +871,8 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
     }
 
     private strongerGitState(left?: GitFileState, right?: GitFileState): GitFileState | undefined {
+        if (left === 'deleted') left = undefined;
+        if (right === 'deleted') right = undefined;
         if (!left) return right;
         if (!right) return left;
         return this.gitPriority(right) > this.gitPriority(left) ? right : left;
@@ -864,7 +881,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
     private gitPriority(state: GitFileState): number {
         switch (state) {
             case 'conflict': return 5;
-            case 'deleted': return 4;
+            case 'deleted': return 0;
             case 'modified': return 3;
             case 'renamed': return 2;
             case 'added': return 1;
@@ -1219,6 +1236,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
     let tree: vscode.TreeView<WebNode> | undefined;
     const getColorMode = (): ExplorerColorMode =>
         vscode.workspace.getConfiguration('aoh.solutionExplorer').get<ExplorerColorMode>('colorMode', 'both');
+    const getGitAutoRefresh = (): boolean =>
+        vscode.workspace.getConfiguration('aoh.solutionExplorer').get<boolean>('git.autoRefresh', true);
+    const getGitRefreshDelay = (): number =>
+        vscode.workspace.getConfiguration('aoh.solutionExplorer').get<number>('git.refreshDelay', 150);
 
     const decorationService = new ExplorerDecorationService(getColorMode());
     const followEditorStateKey = 'aoh.solutionExplorer.followEditor';
@@ -1271,7 +1292,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
             try {
                 const activeProvider = getProvider();
                 const selected = node ?? tree?.selection?.[0];
-                return await activeProvider.runAction(actionName, selected);
+                if (!selected) return;
+
+                const currentSelection = tree?.selection ?? [];
+                const selectedNodes = currentSelection.length > 1 && currentSelection.some((item: WebNode) => item.id === selected.id)
+                    ? [...currentSelection]
+                    : [selected];
+
+                return await activeProvider.runAction(actionName, selected, selectedNodes);
             } catch (error) {
                 log(`Command failed: ${command}`, error);
                 output.show(true);
@@ -1358,7 +1386,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
 
         tree = vscode.window.createTreeView('aoh.solutionExplorer.view', {
             treeDataProvider: provider,
-            showCollapseAll: true
+            showCollapseAll: true,
+            canSelectMany: true
         });
 
         let visualRefreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1394,9 +1423,51 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
             }, delay);
         };
 
+        // Git operations do not necessarily touch an open document, so save/diagnostic
+        // events alone are insufficient. Integrate with VS Code's built-in Git extension
+        // when available and refresh only visual state after repository-state changes.
+        // AOH's Git status calculation remains independent; this is only an event source.
+        const gitEventSubscriptions: vscode.Disposable[] = [];
+        const subscribeToGitRepository = (repository: any): void => {
+            const state = repository?.state;
+            if (!state?.onDidChange) return;
+            gitEventSubscriptions.push(state.onDidChange(() => {
+                if (getGitAutoRefresh()) scheduleVisualRefresh(getGitRefreshDelay());
+            }));
+        };
+
+        const initializeGitAutoRefresh = async (): Promise<void> => {
+            try {
+                const gitExtension = vscode.extensions.getExtension('vscode.git');
+                if (!gitExtension) {
+                    log('Git auto-refresh: built-in vscode.git extension not available.');
+                    return;
+                }
+
+                const gitExports: any = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate();
+                const gitApi = gitExports?.getAPI?.(1);
+                if (!gitApi) {
+                    log('Git auto-refresh: vscode.git API v1 not available.');
+                    return;
+                }
+
+                for (const repository of gitApi.repositories ?? []) subscribeToGitRepository(repository);
+                if (gitApi.onDidOpenRepository) {
+                    gitEventSubscriptions.push(gitApi.onDidOpenRepository((repository: any) => subscribeToGitRepository(repository)));
+                }
+
+                log(`Git auto-refresh: subscribed to ${(gitApi.repositories ?? []).length} repository/repositories.`);
+            } catch (error) {
+                log('Git auto-refresh initialization failed.', error);
+            }
+        };
+
+        void initializeGitAutoRefresh();
+
         context.subscriptions.push({
             dispose: () => {
                 if (visualRefreshTimer) clearTimeout(visualRefreshTimer);
+                for (const subscription of gitEventSubscriptions.splice(0)) subscription.dispose();
             }
         });
 

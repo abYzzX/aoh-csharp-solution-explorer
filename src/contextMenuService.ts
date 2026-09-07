@@ -399,9 +399,23 @@ export class ContextMenuService {
             case 'copy': this.clipboard = { uris: targetUris, cut: false }; return;
             case 'cut': this.clipboard = { uris: targetUris, cut: true }; return;
             case 'paste': return this.pasteItems(containerUri, kind, solutionFolderPath, uri);
-            case 'copyPathSolution': return this.copyPathRelativeToSolution(uri, solutionUri);
-            case 'copyPathWorkspace': return this.copyPathRelativeToWorkspace(uri);
-            case 'copyPathFull': await vscode.env.clipboard.writeText(uri.fsPath); return;
+            case 'copyPathSolution': {
+                if (targetUris.length > 1) {
+                    const values = targetUris.map((target: vscode.Uri) => this.relativePathToSolution(target, solutionUri));
+                    await vscode.env.clipboard.writeText(values.join('\n'));
+                    return;
+                }
+                return this.copyPathRelativeToSolution(uri, solutionUri);
+            }
+            case 'copyPathWorkspace': {
+                if (targetUris.length > 1) {
+                    const values = targetUris.map((target: vscode.Uri) => this.relativePathToWorkspace(target));
+                    await vscode.env.clipboard.writeText(values.join('\n'));
+                    return;
+                }
+                return this.copyPathRelativeToWorkspace(uri);
+            }
+            case 'copyPathFull': await vscode.env.clipboard.writeText(targetUris.map((target: vscode.Uri) => target.fsPath).join('\n')); return;
             case 'gitTrack': return this.gitTrack(targetUris, uri, kind);
             case 'gitUntrack': return this.gitUntrack(targetUris, uri, kind);
             case 'addExistingItem': await this.addExistingItem(uri, kind, solutionFolderPath); return;
@@ -430,7 +444,7 @@ export class ContextMenuService {
                 await this.refresh(); return;
             }
             case 'gitStage': return this.gitStage(targetUris, uri, kind);
-            case 'gitUnstage': return this.gitUnstage(uri, kind);
+            case 'gitUnstage': return this.gitUnstage(targetUris, uri, kind);
             case 'gitRollback': return this.gitRollback(targetUris, uri, kind);
             case 'buildSolution': return this.runDotnet('Build Solution', uri, ['build', uri.fsPath], path.dirname(uri.fsPath));
             case 'rebuildSolution': return this.runDotnet('Rebuild Solution', uri, ['build', uri.fsPath, '--no-incremental'], path.dirname(uri.fsPath));
@@ -476,10 +490,10 @@ export class ContextMenuService {
                 }
                 return;
             }
-            case 'copyPath': await vscode.env.clipboard.writeText(uri.fsPath); return;
+            case 'copyPath': await vscode.env.clipboard.writeText(targetUris.map((target: vscode.Uri) => target.fsPath).join('\n')); return;
             case 'copyRelativePath': {
-                const folder = vscode.workspace.getWorkspaceFolder(uri);
-                await vscode.env.clipboard.writeText(folder ? path.relative(folder.uri.fsPath, uri.fsPath) : path.basename(uri.fsPath)); return;
+                const values = targetUris.map((target: vscode.Uri) => this.relativePathToWorkspace(target));
+                await vscode.env.clipboard.writeText(values.join('\n')); return;
             }
             case 'rename': {
                 const oldName = path.basename(uri.fsPath);
@@ -523,15 +537,30 @@ export class ContextMenuService {
                     return;
                 }
 
-                const choice = await vscode.window.showWarningMessage(
-                    `Delete '${path.basename(uri.fsPath)}'?`,
-                    { modal: true },
-                    'Delete'
-                );
-                if (choice === 'Delete') {
-                    await vscode.workspace.fs.delete(uri, { recursive: true, useTrash: true });
-                    await this.refresh();
+                const effectiveTargets = targetUris.length ? targetUris : [uri];
+                const confirmDelete = vscode.workspace
+                    .getConfiguration('aoh.solutionExplorer')
+                    .get<boolean>('delete.confirm', true);
+                const useTrash = vscode.workspace
+                    .getConfiguration('aoh.solutionExplorer')
+                    .get<boolean>('delete.useTrash', true);
+
+                if (confirmDelete) {
+                    const label = effectiveTargets.length === 1
+                        ? `'${path.basename(effectiveTargets[0].fsPath)}'`
+                        : `${effectiveTargets.length} selected items`;
+                    const choice = await vscode.window.showWarningMessage(
+                        `Delete ${label}?`,
+                        { modal: true },
+                        'Delete'
+                    );
+                    if (choice !== 'Delete') return;
                 }
+
+                for (const target of effectiveTargets) {
+                    await vscode.workspace.fs.delete(target, { recursive: true, useTrash });
+                }
+                await this.refresh();
                 return;
             }
             case 'openTerminal': {
@@ -691,6 +720,16 @@ export class ContextMenuService {
         await this.refresh();
     }
 
+    private relativePathToSolution(uri: vscode.Uri, solutionUri?: vscode.Uri): string {
+        if (!solutionUri) return path.basename(uri.fsPath);
+        return path.relative(path.dirname(solutionUri.fsPath), uri.fsPath);
+    }
+
+    private relativePathToWorkspace(uri: vscode.Uri): string {
+        const folder = vscode.workspace.getWorkspaceFolder(uri) ?? vscode.workspace.workspaceFolders?.[0];
+        return folder ? path.relative(folder.uri.fsPath, uri.fsPath) : path.basename(uri.fsPath);
+    }
+
     private async copyPathRelativeToSolution(uri: vscode.Uri, solutionUri?: vscode.Uri): Promise<void> {
         if (!solutionUri) {
             await vscode.env.clipboard.writeText(path.basename(uri.fsPath));
@@ -778,17 +817,8 @@ export class ContextMenuService {
         return this.runGitForTargets('stage', targets, uri, kind, relative => ['add', '--', relative]);
     }
 
-    private async gitUnstage(uri: vscode.Uri, kind?: NodeKind): Promise<void> {
-        const context = await this.getGitContext(uri, kind);
-        if (!context) return;
-
-        try {
-            await execFileAsync('git', ['restore', '--staged', '--', context.relativePath], { cwd: context.root });
-            await this.refresh();
-        } catch (error: any) {
-            const detail = error?.stderr?.toString().trim() || error?.message || String(error);
-            vscode.window.showErrorMessage(`Git unstage failed: ${detail}`);
-        }
+    private gitUnstage(targets: vscode.Uri[], uri: vscode.Uri, kind?: NodeKind): Promise<void> {
+        return this.runGitForTargets('unstage', targets, uri, kind, relative => ['restore', '--staged', '--', relative]);
     }
 
     private async gitRollback(targets: vscode.Uri[], uri: vscode.Uri, kind?: NodeKind): Promise<void> {

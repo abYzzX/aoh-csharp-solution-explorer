@@ -101,6 +101,10 @@ export class GitStatusService {
         let strongest: GitFileState | undefined;
 
         for (const [filePath, state] of this.status) {
+            // Deleted items are deliberately ignored for parent coloring. A deleted
+            // descendant making an otherwise clean folder/project look 'deleted' is
+            // visually confusing in a solution-oriented tree.
+            if (state === 'deleted') continue;
             const normalizedFile = this.normalize(filePath);
             if (normalizedFile !== normalizedRoot && !normalizedFile.startsWith(normalizedRoot + path.sep)) continue;
 
@@ -115,7 +119,7 @@ export class GitStatusService {
     private priority(state: GitFileState): number {
         switch (state) {
             case 'conflict': return 5;
-            case 'deleted': return 4;
+            case 'deleted': return 0;
             case 'modified': return 3;
             case 'renamed': return 2;
             case 'added': return 1;

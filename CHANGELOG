@@ -1,3 +1,11 @@
+## 1.12.0
+
+- Added native multi-select support to the Solution Explorer tree. Multi-target actions now include Copy/Cut, path copying, Git Track/Untrack/Stage/Unstage/Rollback, and regular file/folder deletion.
+- Git Deleted is no longer colored and is ignored when propagating Git colors to parent folders/projects.
+- Added Git auto-refresh integration with VS Code's built-in Git repository events so colors are refreshed after Git state changes such as stage, commit, checkout and push without rebuilding the tree.
+- Added Solution Explorer settings for Git auto-refresh, Git refresh debounce delay, delete confirmation, and trash/recycle-bin usage.
+- Git and error colors still use VS Code theme color IDs, so theme and `workbench.colorCustomizations` values remain respected.
+
 ## 1.11.12
 
 - Fixed Git repository discovery for Solution Explorer status colors. Git state is now loaded from repositories containing the actual loaded solution/project paths, not only from VS Code workspace-folder roots.

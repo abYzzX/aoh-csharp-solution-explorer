@@ -104,7 +104,6 @@ export class ExplorerDecorationService implements vscode.FileDecorationProvider 
         switch (state) {
             case 'modified': return new vscode.ThemeColor('gitDecoration.modifiedResourceForeground');
             case 'added': return new vscode.ThemeColor('gitDecoration.addedResourceForeground');
-            case 'deleted': return new vscode.ThemeColor('gitDecoration.deletedResourceForeground');
             case 'renamed': return new vscode.ThemeColor('gitDecoration.renamedResourceForeground');
             case 'conflict': return new vscode.ThemeColor('gitDecoration.conflictingResourceForeground');
             default: return undefined;
@@ -115,7 +114,6 @@ export class ExplorerDecorationService implements vscode.FileDecorationProvider 
         switch (state) {
             case 'modified': return 'Git: Modified';
             case 'added': return 'Git: Added';
-            case 'deleted': return 'Git: Deleted';
             case 'renamed': return 'Git: Renamed';
             case 'conflict': return 'Git: Conflict';
             default: return undefined;

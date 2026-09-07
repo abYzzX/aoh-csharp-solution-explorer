@@ -2,7 +2,7 @@
   "name": "aoh-solution-explorer",
   "displayName": "AOH - Solution Explorer",
   "description": "A Rider-inspired .NET solution explorer for VS Code.",
-  "version": "1.11.12",
+  "version": "1.12.0",
   "publisher": "Abyzz",
   "icon": "media/aoh-logo-icon.png",
   "license": "WTFPL",
@@ -758,7 +758,29 @@
             "None"
           ],
           "default": "both",
-          "description": "Controls status coloring in the AOH Solution Explorer. In Both mode error colors take priority over Git colors."
+          "description": "Controls status coloring in the AOH Solution Explorer. In Both mode error colors take priority over Git colors. Deleted Git items are intentionally not colored."
+        },
+        "aoh.solutionExplorer.git.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh Git status colors when the Git repository state changes, for example after stage, commit, checkout or push operations."
+        },
+        "aoh.solutionExplorer.git.refreshDelay": {
+          "type": "number",
+          "default": 150,
+          "minimum": 50,
+          "maximum": 5000,
+          "description": "Debounce delay in milliseconds before refreshing Git status colors after a repository-state change."
+        },
+        "aoh.solutionExplorer.delete.confirm": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ask for confirmation before deleting files or folders from the Solution Explorer."
+        },
+        "aoh.solutionExplorer.delete.useTrash": {
+          "type": "boolean",
+          "default": true,
+          "description": "Move deleted files and folders to the operating system trash/recycle bin when possible. Disable to delete directly."
         }
       }
     }
