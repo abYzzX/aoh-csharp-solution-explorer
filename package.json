@@ -2,7 +2,7 @@
   "name": "aoh-solution-explorer",
   "displayName": "AOH - Solution Explorer",
   "description": "A Rider-inspired .NET solution explorer for VS Code.",
-  "version": "1.11.7",
+  "version": "1.11.12",
   "publisher": "Abyzz",
   "icon": "media/aoh-logo-icon.png",
   "license": "WTFPL",
@@ -742,6 +742,23 @@
             "obj"
           ],
           "description": "Glob patterns for files and folders hidden in the AOH Solution Explorer. Use the toolbar toggle to temporarily show excluded items."
+        },
+        "aoh.solutionExplorer.colorMode": {
+          "type": "string",
+          "enum": [
+            "both",
+            "git",
+            "errors",
+            "none"
+          ],
+          "enumItemLabels": [
+            "Both",
+            "Git Colors",
+            "Error Colors",
+            "None"
+          ],
+          "default": "both",
+          "description": "Controls status coloring in the AOH Solution Explorer. In Both mode error colors take priority over Git colors."
         }
       }
     }

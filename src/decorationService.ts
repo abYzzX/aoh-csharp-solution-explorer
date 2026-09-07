@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { GitFileState, WebNode } from './types';
 
+export type ExplorerColorMode = 'git' | 'errors' | 'both' | 'none';
+
 interface DecorationState {
     gitState?: GitFileState;
     errors: number;
@@ -20,13 +22,29 @@ export class ExplorerDecorationService implements vscode.FileDecorationProvider 
     readonly onDidChangeFileDecorations = this.changed.event;
 
     private readonly states = new Map<string, DecorationState>();
+    private colorMode: ExplorerColorMode;
+
+    constructor(colorMode: ExplorerColorMode = 'both') {
+        this.colorMode = colorMode;
+    }
+
+    setColorMode(colorMode: ExplorerColorMode): void {
+        if (this.colorMode === colorMode) return;
+        this.colorMode = colorMode;
+
+        // Repaint registered decorations only. This does NOT rebuild the TreeDataProvider.
+        // Using a global decoration invalidation is more reliable for our synthetic
+        // resource URIs than targeted URI invalidation (which caused Git colors to
+        // stop updating in VS Code).
+        this.changed.fire(undefined);
+    }
 
     update(roots: WebNode[]): void {
-        this.states.clear();
+        const next = new Map<string, DecorationState>();
 
         const visit = (node: WebNode): void => {
             if (node.decorationUri) {
-                this.states.set(node.decorationUri, {
+                next.set(node.decorationUri, {
                     gitState: node.gitState,
                     errors: node.errorCount ?? 0
                 });
@@ -36,20 +54,45 @@ export class ExplorerDecorationService implements vscode.FileDecorationProvider 
         };
 
         for (const root of roots) visit(root);
-        this.changed.fire(undefined);
+
+        let hasChanges = this.states.size !== next.size;
+        if (!hasChanges) {
+            for (const [key, current] of next) {
+                const previous = this.states.get(key);
+                if (previous?.gitState !== current.gitState || previous?.errors !== current.errors) {
+                    hasChanges = true;
+                    break;
+                }
+            }
+        }
+
+        this.states.clear();
+        for (const [key, state] of next) this.states.set(key, state);
+
+        // Important: invalidate decorations globally, but do NOT fire tree-data
+        // changes. This restores the reliable behavior from 1.11.7 without bringing
+        // back the tree rebuild/flicker that 1.11.8 removed.
+        if (hasChanges) this.changed.fire(undefined);
     }
 
     provideFileDecoration(uri: vscode.Uri): vscode.ProviderResult<vscode.FileDecoration> {
         const state = this.states.get(uri.toString());
-        if (!state) return undefined;
+        if (!state || this.colorMode === 'none') return undefined;
 
-        if (state.errors > 0) {
+        const showErrors = this.colorMode === 'errors' || this.colorMode === 'both';
+        const showGit = this.colorMode === 'git' || this.colorMode === 'both';
+
+        // In Both mode errors intentionally win over Git. A node can only have one
+        // foreground color in the VS Code decoration API.
+        if (showErrors && state.errors > 0) {
             return new vscode.FileDecoration(
                 undefined,
                 `${state.errors} error${state.errors === 1 ? '' : 's'}`,
                 new vscode.ThemeColor('problemsErrorIcon.foreground')
             );
         }
+
+        if (!showGit) return undefined;
 
         const color = this.gitColor(state.gitState);
         if (!color) return undefined;

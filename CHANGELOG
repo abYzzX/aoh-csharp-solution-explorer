@@ -1,3 +1,37 @@
+## 1.11.12
+
+- Fixed Git repository discovery for Solution Explorer status colors. Git state is now loaded from repositories containing the actual loaded solution/project paths, not only from VS Code workspace-folder roots.
+- Resolves each repository root with `git rev-parse --show-toplevel` and runs porcelain status from that root.
+- Adds a concise Git-state diagnostic line to the AOH Solution Explorer output channel (repository count + changed-path count).
+- Keeps the no-flicker visual refresh path and ColorMode setting.
+
+## 1.11.11
+
+- Fixed Git color refresh regression introduced by the targeted decoration invalidation in 1.11.8.
+- Decoration state changes now invalidate the decoration provider globally again, matching the reliable 1.11.7 behavior.
+- Tree data is still not rebuilt on save/diagnostic changes, so the 1.11.8 flicker fix remains intact.
+- Keeps the `colorMode` setting from 1.11.9 and Windows Git path normalization from 1.11.10.
+
+## 1.11.10
+
+- Fixed Git coloring on Windows by normalizing lookup paths consistently before reading Git status.
+- `Git Colors` and `Both` now use the same normalized Git-state lookup as aggregation.
+- Keeps the 1.11.8 flicker reduction and 1.11.9 color mode setting unchanged.
+
+## 1.11.9
+
+- Added `aoh.solutionExplorer.colorMode` with `Both`, `Git Colors`, `Error Colors`, and `None`.
+- `Both` keeps the current priority: errors override Git colors.
+- Changing the color mode repaints decorations in-place without rebuilding the tree.
+- Keeps the flicker reduction introduced in 1.11.8.
+
+## 1.11.8
+
+- Stop rebuilding the complete Solution Explorer tree for save and diagnostic events.
+- Refresh Git/diagnostic visual state in-place instead, preserving the existing tree and selection.
+- Debounce rapid diagnostic updates triggered while typing.
+- File decorations now invalidate only nodes whose visible state actually changed instead of repainting the entire explorer.
+
 ## 1.11.6
 
 - Diagnostic symbols are now rendered only as native VS Code file-decoration badges.

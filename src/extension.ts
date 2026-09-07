@@ -3,7 +3,7 @@ import * as path from 'path';
 import { ContextMenuService } from './contextMenuService';
 import { GitStatusService } from './gitStatusService';
 import { DiagnosticService } from './diagnosticService';
-import { ExplorerDecorationService } from './decorationService';
+import { ExplorerColorMode, ExplorerDecorationService } from './decorationService';
 import { NodeKind, ParsedProject, ParsedSolutionFolder, ParsedSolution, WebNode, DependencyRef, GitFileState } from './types';
 import { AohProjectInfo, AohSolutionExplorerApi, AohSolutionInfo, AohSolutionState } from './api';
 
@@ -28,18 +28,37 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
     private showExcludedFiles = false;
 
     constructor(log: (message: string) => void = () => {}) {
-        this.gitStatusService = new GitStatusService();
+        this.gitStatusService = new GitStatusService(log);
         this.contextMenuService = new ContextMenuService(async () => this.refresh(), log);
     }
 
     async refresh(): Promise<void> {
-        await this.gitStatusService.load();
         this.diagnosticService.load();
         this.roots = await this.buildRoots();
+        await this.gitStatusService.load(this.getGitProbePaths());
+        this.resetNodeState(this.roots);
         this.applyAggregatedState(this.roots);
         this.rebuildIndexes();
         this.changed.fire();
         this.solutionStateChanged.fire();
+    }
+
+    /**
+     * Refresh only Git/diagnostic state without rebuilding the tree.
+     *
+     * Diagnostics can change on every keystroke. Rebuilding the complete tree for
+     * those events makes VS Code discard/recreate TreeItems and causes very visible
+     * flicker. Structural refreshes are still used for create/delete/rename/config
+     * changes; ordinary editor activity only updates decorations in-place.
+     */
+    async refreshVisualState(): Promise<void> {
+        const roots = await this.ensureRoots();
+
+        await this.gitStatusService.load(this.getGitProbePaths());
+        this.diagnosticService.load();
+
+        this.resetNodeState(roots);
+        this.applyAggregatedState(roots);
     }
 
     async setShowExcludedFiles(show: boolean): Promise<void> {
@@ -59,15 +78,29 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
     private async ensureRoots(): Promise<WebNode[]> {
         if (!this.roots) {
-            await this.gitStatusService.load();
             this.diagnosticService.load();
             this.roots = await this.buildRoots();
+            await this.gitStatusService.load(this.getGitProbePaths());
+            this.resetNodeState(this.roots);
             this.applyAggregatedState(this.roots);
             this.rebuildIndexes();
             this.solutionStateChanged.fire();
         }
 
         return this.roots;
+    }
+
+    private getGitProbePaths(): string[] {
+        const probes = new Set<string>();
+
+        for (const solution of this.parsedSolutions) {
+            probes.add(path.dirname(solution.uri.fsPath));
+            for (const project of solution.projects) {
+                probes.add(project.projectRoot.fsPath);
+            }
+        }
+
+        return [...probes];
     }
 
     private rebuildIndexes(): void {
@@ -333,7 +366,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             uri: solution.uri.toString(),
             expanded: true,
             children: await this.getSolutionChildren(solution),
-            gitState: this.gitStatusService.status.get(path.normalize(solution.uri.fsPath))
+            gitState: this.gitStatusService.getState(solution.uri.fsPath)
         })));
     }
 
@@ -760,11 +793,44 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             kind: 'file',
             label: path.basename(uri.fsPath),
             uri: uri.toString(),
-            gitState: this.gitStatusService.status.get(path.normalize(uri.fsPath)),
+            gitState: this.gitStatusService.getState(uri.fsPath),
             ...this.toDiagnosticFields(this.diagnosticService.get(uri))
         };
     }
 
+
+    private resetNodeState(roots: WebNode[]): void {
+        const visit = (node: WebNode): void => {
+            node.gitState = undefined;
+            node.errorCount = 0;
+            node.warningCount = 0;
+            node.diagnosticState = undefined;
+
+            if (node.uri) {
+                const uri = vscode.Uri.parse(node.uri);
+
+                switch (node.kind) {
+                    case 'file':
+                        node.gitState = this.gitStatusService.getState(uri.fsPath);
+                        Object.assign(node, this.toDiagnosticFields(this.diagnosticService.get(uri)));
+                        break;
+                    case 'folder':
+                        node.gitState = this.gitStatusService.getStrongestUnder(uri.fsPath);
+                        break;
+                    case 'project':
+                        node.gitState = this.gitStatusService.getStrongestUnder(path.dirname(uri.fsPath));
+                        break;
+                    case 'solution':
+                        node.gitState = this.gitStatusService.getState(uri.fsPath);
+                        break;
+                }
+            }
+
+            for (const child of node.children ?? []) visit(child);
+        };
+
+        for (const root of roots) visit(root);
+    }
 
     private applyAggregatedState(roots: WebNode[]): void {
         const visit = (node: WebNode): { gitState?: GitFileState; errors: number } => {
@@ -1151,7 +1217,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
 
     let provider: SolutionExplorerTreeDataProvider | undefined;
     let tree: vscode.TreeView<WebNode> | undefined;
-    const decorationService = new ExplorerDecorationService();
+    const getColorMode = (): ExplorerColorMode =>
+        vscode.workspace.getConfiguration('aoh.solutionExplorer').get<ExplorerColorMode>('colorMode', 'both');
+
+    const decorationService = new ExplorerDecorationService(getColorMode());
     const followEditorStateKey = 'aoh.solutionExplorer.followEditor';
     let followEditor = context.workspaceState.get<boolean>(followEditorStateKey, false);
     let showExcludedFiles = false;
@@ -1292,6 +1361,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
             showCollapseAll: true
         });
 
+        let visualRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+        let visualRefreshRunning = false;
+        let visualRefreshPending = false;
+
+        const runVisualRefresh = async (): Promise<void> => {
+            if (!provider) return;
+
+            if (visualRefreshRunning) {
+                visualRefreshPending = true;
+                return;
+            }
+
+            visualRefreshRunning = true;
+            try {
+                do {
+                    visualRefreshPending = false;
+                    await provider.refreshVisualState();
+                    const roots = await provider.getChildren();
+                    decorationService.update(roots);
+                } while (visualRefreshPending);
+            } finally {
+                visualRefreshRunning = false;
+            }
+        };
+
+        const scheduleVisualRefresh = (delay: number): void => {
+            if (visualRefreshTimer) clearTimeout(visualRefreshTimer);
+            visualRefreshTimer = setTimeout(() => {
+                visualRefreshTimer = undefined;
+                void runVisualRefresh();
+            }, delay);
+        };
+
+        context.subscriptions.push({
+            dispose: () => {
+                if (visualRefreshTimer) clearTimeout(visualRefreshTimer);
+            }
+        });
+
         context.subscriptions.push(
             vscode.window.registerFileDecorationProvider(decorationService),
             provider.onDidChangeTreeData(async () => {
@@ -1310,10 +1418,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
             vscode.workspace.onDidCreateFiles(async () => { await provider!.refresh(); if (followEditor) await selectCurrentFile(); }),
             vscode.workspace.onDidDeleteFiles(() => provider!.refresh()),
             vscode.workspace.onDidRenameFiles(async () => { await provider!.refresh(); if (followEditor) await selectCurrentFile(); }),
-            vscode.workspace.onDidSaveTextDocument(() => provider!.refresh()),
-            vscode.languages.onDidChangeDiagnostics(() => provider!.refresh()),
+            vscode.workspace.onDidSaveTextDocument(() => scheduleVisualRefresh(75)),
+            vscode.languages.onDidChangeDiagnostics(() => scheduleVisualRefresh(125)),
             vscode.workspace.onDidChangeWorkspaceFolders(async () => { await provider!.refresh(); if (followEditor) await selectCurrentFile(); }),
             vscode.workspace.onDidChangeConfiguration((event: vscode.ConfigurationChangeEvent) => {
+                if (event.affectsConfiguration('aoh.solutionExplorer.colorMode')) {
+                    decorationService.setColorMode(getColorMode());
+                }
+
                 if (event.affectsConfiguration('explorer.fileNesting') ||
                     event.affectsConfiguration('aoh.solutionExplorer.exclude')) {
                     void provider!.refresh().then(() => { if (followEditor) return selectCurrentFile(); });
