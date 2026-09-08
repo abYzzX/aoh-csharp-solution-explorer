@@ -2,7 +2,7 @@
   "name": "aoh-solution-explorer",
   "displayName": "AOH - Solution Explorer",
   "description": "A Rider-inspired .NET solution explorer for VS Code.",
-  "version": "1.12.0",
+  "version": "1.13.1",
   "publisher": "Abyzz",
   "icon": "media/aoh-logo-icon.png",
   "license": "WTFPL",
@@ -771,6 +771,11 @@
           "minimum": 50,
           "maximum": 5000,
           "description": "Debounce delay in milliseconds before refreshing Git status colors after a repository-state change."
+        },
+        "aoh.solutionExplorer.dragAndDrop.confirm": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ask for confirmation before moving files or folders with drag & drop in the Solution Explorer."
         },
         "aoh.solutionExplorer.delete.confirm": {
           "type": "boolean",

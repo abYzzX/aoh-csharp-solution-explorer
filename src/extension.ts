@@ -6,6 +6,7 @@ import { DiagnosticService } from './diagnosticService';
 import { ExplorerColorMode, ExplorerDecorationService } from './decorationService';
 import { NodeKind, ParsedProject, ParsedSolutionFolder, ParsedSolution, WebNode, DependencyRef, GitFileState } from './types';
 import { AohProjectInfo, AohSolutionExplorerApi, AohSolutionInfo, AohSolutionState } from './api';
+import { SolutionExplorerDragAndDropController } from './dragAndDropController';
 
 // Bootstrap diagnostics are created at module load so an absent channel means
 // VS Code never loaded this runtime file.
@@ -181,6 +182,14 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
         // resourceUri like a folder, so force a file icon for nested file parents.
         if (element.kind === 'file' && hasChildren) {
             item.iconPath = vscode.ThemeIcon.File;
+        }
+
+        // Empty folders have no children and therefore a non-collapsible TreeItem.
+        // With only resourceUri VS Code then treats them like files for icon-theme
+        // resolution. ThemeIcon.Folder keeps the active file-icon-theme folder icon
+        // without adding a fake expand arrow to an actually empty directory.
+        if (element.kind === 'folder' && !hasChildren) {
+            item.iconPath = vscode.ThemeIcon.Folder;
         }
 
         // AOH-specific structural nodes use the extension's own icons.
@@ -1384,10 +1393,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
         const initialRoots = await provider.getChildren();
         decorationService.update(initialRoots);
 
+        const dragAndDropController = new SolutionExplorerDragAndDropController(log);
+
         tree = vscode.window.createTreeView('aoh.solutionExplorer.view', {
             treeDataProvider: provider,
             showCollapseAll: true,
-            canSelectMany: true
+            canSelectMany: true,
+            dragAndDropController
         });
 
         let visualRefreshTimer: ReturnType<typeof setTimeout> | undefined;

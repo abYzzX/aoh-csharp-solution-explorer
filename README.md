@@ -100,6 +100,7 @@ The extension exposes focused settings for behavior that is useful to tune witho
 - `aoh.solutionExplorer.colorMode` - Git colors, error colors, both, or none.
 - `aoh.solutionExplorer.git.autoRefresh` - refresh Git colors when repository state changes.
 - `aoh.solutionExplorer.git.refreshDelay` - debounce Git-state refreshes.
+- `aoh.solutionExplorer.dragAndDrop.confirm` - confirm moves performed with drag & drop.
 - `aoh.solutionExplorer.delete.confirm` - confirm file/folder deletion.
 - `aoh.solutionExplorer.delete.useTrash` - use the OS trash/recycle bin when deleting.
 

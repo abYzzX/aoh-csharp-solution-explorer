@@ -1,3 +1,14 @@
+## 1.13.1
+
+- Added a confirmation dialog before drag & drop moves in the Solution Explorer.
+- Added `aoh.solutionExplorer.dragAndDrop.confirm` (default: `true`) to enable or disable that confirmation.
+
+## 1.13.0
+
+- Added native drag & drop for files and folders in the Solution Explorer. Drop onto a folder or project to move the selected item(s); multi-select drag is supported.
+- Drag & drop uses VS Code workspace rename edits, refuses overwrites, prevents moving a folder into itself, and does not allow project/solution files to be moved this way.
+- Fixed empty directories being rendered with a file/text icon. Empty folder nodes now explicitly use the active file icon theme's folder icon without a fake expand arrow.
+
 ## 1.12.0
 
 - Added native multi-select support to the Solution Explorer tree. Multi-target actions now include Copy/Cut, path copying, Git Track/Untrack/Stage/Unstage/Rollback, and regular file/folder deletion.
