@@ -2,10 +2,18 @@
   "name": "aoh-solution-explorer",
   "displayName": "AOH - Solution Explorer",
   "description": "A Rider-inspired .NET solution explorer for VS Code.",
-  "version": "1.13.2",
+  "version": "0.0.0",
   "publisher": "Abyzz",
   "icon": "media/aoh-se-icon.png",
-  "license": "WTFPL",
+  "license": "MIT",
+    "repository": {
+    "type": "git",
+    "url": "https://github.com/Abyzz/aoh-csharp-solution-explorer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Abyzz/aoh-csharp-solution-explorer/issues"
+  },
+  "homepage": "https://github.com/Abyzz/aoh-csharp-solution-explorer#readme",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -793,7 +801,8 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package"
+    "package": "npx @vscode/vsce package",
+    "test": "npm run compile && node --test out/test/**/*.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -1,0 +1,36 @@
+# Agent Instructions - AOH Solution Explorer
+
+Read `AOH-RULES.md`, `EXTENSION-DESIGN.md`, and `CHANGELOG.md` before changing this repository.
+
+## Scope
+
+AOH Solution Explorer provides a project-centric .NET solution tree inside VS Code. Keep it focused on solution/project navigation and operations that naturally belong to that tree. Do not turn it into a replacement for VS Code itself.
+
+## Implementation Rules
+
+- Prefer the native VS Code TreeView/TreeDataProvider APIs. The Solution Explorer itself is not a WebView.
+- Preserve `.sln` and `.slnx` behavior and project/solution-folder semantics.
+- Treat C# Dev Kit as the source of solution/project information where the current implementation does so.
+- Avoid full tree rebuilds for visual-only state changes. Git/diagnostic refreshes must preserve the anti-flicker behavior.
+- Git Deleted state is intentionally ignored for coloring and parent propagation.
+- Errors may color nodes; warnings are intentionally ignored by the current visible decoration behavior.
+- Keep Git repository discovery based on actual solution/project probe paths, not workspace folders alone.
+- Multi-selection operations must operate on the effective selection, not accidentally only on the context-clicked item.
+- File moves/deletes/copy operations must not silently overwrite existing files.
+- Drag and drop must retain its safety checks and optional confirmation.
+
+## Tests
+
+Pure parsing, path, filtering, Git-state, and selection logic should be extracted and tested without booting VS Code where practical. Do not build a large fake VS Code runtime just to increase coverage.
+
+Run:
+
+```bash
+npm test
+```
+
+before completing changes.
+
+## Current Follow-up Work
+
+See `EXTENSION-DESIGN.md` for planned behavior. In particular, copy/cut/paste, duplicate, keyboard command integration, and full-filename type-to-search remain areas to improve; do not claim them complete merely because command IDs already exist.

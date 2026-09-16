@@ -3,6 +3,7 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { GitFileState } from './types';
+import { gitStatePriority, isPathUnder, mapGitStatus, normalizeGitPath } from './gitStatusUtils';
 
 const execFileAsync = promisify(execFile);
 
@@ -42,7 +43,7 @@ export class GitStatusService {
                 );
 
                 const root = String(stdout).trim();
-                if (root) repositoryRoots.add(this.normalize(root));
+                if (root) repositoryRoots.add(normalizeGitPath(root));
             } catch {
                 // Candidate is not inside a Git repository. That is fine.
             }
@@ -72,8 +73,8 @@ export class GitStatusService {
                     const relativePath = entry.slice(3);
 
                     this.status.set(
-                        this.normalize(path.resolve(repositoryRoot, relativePath)),
-                        this.mapGitStatus(xy)
+                        normalizeGitPath(path.resolve(repositoryRoot, relativePath)),
+                        mapGitStatus(xy)
                     );
 
                     // In porcelain -z format a rename/copy has a second NUL-terminated
@@ -93,11 +94,11 @@ export class GitStatusService {
 
 
     getState(filePath: string): GitFileState | undefined {
-        return this.status.get(this.normalize(filePath));
+        return this.status.get(normalizeGitPath(filePath));
     }
 
     getStrongestUnder(rootPath: string): GitFileState | undefined {
-        const normalizedRoot = this.normalize(rootPath);
+        const normalizedRoot = normalizeGitPath(rootPath);
         let strongest: GitFileState | undefined;
 
         for (const [filePath, state] of this.status) {
@@ -105,10 +106,9 @@ export class GitStatusService {
             // descendant making an otherwise clean folder/project look 'deleted' is
             // visually confusing in a solution-oriented tree.
             if (state === 'deleted') continue;
-            const normalizedFile = this.normalize(filePath);
-            if (normalizedFile !== normalizedRoot && !normalizedFile.startsWith(normalizedRoot + path.sep)) continue;
+            if (!isPathUnder(normalizedRoot, filePath)) continue;
 
-            if (!strongest || this.priority(state) > this.priority(strongest)) {
+            if (!strongest || gitStatePriority(state) > gitStatePriority(strongest)) {
                 strongest = state;
             }
         }
@@ -116,26 +116,5 @@ export class GitStatusService {
         return strongest;
     }
 
-    private priority(state: GitFileState): number {
-        switch (state) {
-            case 'conflict': return 5;
-            case 'deleted': return 0;
-            case 'modified': return 3;
-            case 'renamed': return 2;
-            case 'added': return 1;
-        }
-    }
 
-    private normalize(value: string): string {
-        const normalized = path.normalize(value);
-        return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
-    }
-
-    private mapGitStatus(xy: string): GitFileState {
-        if (xy === '??' || xy.includes('A')) return 'added';
-        if (xy.includes('U') || xy === 'AA' || xy === 'DD') return 'conflict';
-        if (xy.includes('D')) return 'deleted';
-        if (xy.includes('R') || xy.includes('C')) return 'renamed';
-        return 'modified';
-    }
 }

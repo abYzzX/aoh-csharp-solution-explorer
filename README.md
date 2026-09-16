@@ -180,3 +180,18 @@ API v1 provides:
 
 The API is intentionally independent of the TreeView UI.
 
+
+## Development
+
+```bash
+npm install
+npm test
+```
+
+Repository documentation:
+
+- [AOH-RULES.md](AOH-RULES.md) - rules shared by AOH extension repositories.
+- [AGENT.md](AGENT.md) - coding-agent instructions for this extension.
+- [EXTENSION-DESIGN.md](EXTENSION-DESIGN.md) - architecture, decisions, constraints, and planned work.
+- [CONTRIBUTING.md](CONTRIBUTING.md) - contribution workflow.
+- [CHANGELOG.md](CHANGELOG.md) - release history and current unreleased changes.
