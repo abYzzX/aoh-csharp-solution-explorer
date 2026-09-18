@@ -22,6 +22,49 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "keybindings": [
+      {
+        "key": "ctrl+c",
+        "mac": "cmd+c",
+        "command": "aoh.solutionExplorer.copy",
+        "when": "focusedView == 'aoh.solutionExplorer.view' && !inputFocus"
+      },
+      {
+        "key": "ctrl+x",
+        "mac": "cmd+x",
+        "command": "aoh.solutionExplorer.cut",
+        "when": "focusedView == 'aoh.solutionExplorer.view' && !inputFocus"
+      },
+      {
+        "key": "ctrl+v",
+        "mac": "cmd+v",
+        "command": "aoh.solutionExplorer.paste",
+        "when": "focusedView == 'aoh.solutionExplorer.view' && !inputFocus"
+      },
+      {
+        "key": "delete",
+        "mac": "cmd+backspace",
+        "command": "aoh.solutionExplorer.delete",
+        "when": "focusedView == 'aoh.solutionExplorer.view' && !inputFocus"
+      },
+      {
+        "key": "f2",
+        "command": "aoh.solutionExplorer.rename",
+        "when": "focusedView == 'aoh.solutionExplorer.view' && !inputFocus"
+      },
+      {
+        "key": "ctrl+shift+n",
+        "mac": "cmd+shift+n",
+        "command": "aoh.solutionExplorer.newFolder",
+        "when": "focusedView == 'aoh.solutionExplorer.view' && !inputFocus"
+      },
+      {
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n",
+        "command": "aoh.solutionExplorer.newFile",
+        "when": "focusedView == 'aoh.solutionExplorer.view' && !inputFocus"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {

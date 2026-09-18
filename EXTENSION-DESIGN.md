@@ -45,14 +45,6 @@ Native VS Code workspace edits/APIs should be preferred so file operations integ
 
 ## Planned Work
 
-### Copy, Cut, Paste, and Duplicate
-
-Existing command IDs do not mean the feature is complete. Copy/Cut/Paste must work reliably for files and folders and support multi-select where sensible. Add Duplicate. On a destination collision, prompt for a new name rather than inventing `copy` filenames. For C# files, a safe and unambiguous filename rename may also rename the matching contained type; never use blind text replacement.
-
-### Keyboard Commands
-
-Expose useful operations as VS Code commands. Conventional filesystem shortcuts such as Copy/Cut/Paste may have scoped defaults only when they apply strictly to the focused AOH Solution Explorer. AOH-specific actions should remain bindable commands without imposing personal keybindings.
-
 ### Type-to-Search
 
 When the Solution Explorer has focus, typing should support integrated matching against the full filename, not only prefix matching and not a detached Quick Pick workflow.

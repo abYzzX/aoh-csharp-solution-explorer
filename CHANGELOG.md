@@ -2,11 +2,12 @@
 
 All notable user-visible changes to AOH Solution Explorer are documented here.
 
-## [Unreleased]
+## 0.1.2
 
-### Changed
+- Added default keybindings to `package.json`
+- Prevent keyboard file operations on virtual Dependencies nodes from modifying the underlying project file, including mixed selections.
 
-## 0.1.0
+## 0.1.0/0.1.1
 
 - Standardized repository documentation and added unit-test infrastructure.
 

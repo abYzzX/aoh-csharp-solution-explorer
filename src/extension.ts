@@ -1,3 +1,4 @@
+import { allowsNodeAction, allowsNodeSelection } from './nodeActionPolicy';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ContextMenuService } from './contextMenuService';
@@ -247,7 +248,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
     }
 
     async runAction(action: string, element?: WebNode, selectedElements: WebNode[] = []): Promise<void> {
-        if (!element?.uri) return;
+        if (!element?.uri || !allowsNodeAction(action, element.kind)) return;
 
         const collectUris = (node: WebNode): string[] => {
             const result: string[] = [];
@@ -262,6 +263,9 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             'gitTrack', 'gitUntrack', 'gitStage', 'gitUnstage', 'gitRollback',
             'delete'
         ]);
+
+        if (multiTargetActions.has(action) &&
+            !allowsNodeSelection(action, selectedElements.map(node => node.kind))) return;
 
         const canUseMultiSelection = multiTargetActions.has(action) && selectedElements.length > 1 &&
             (action !== 'delete' || selectedElements.every(node => node.kind === 'file' || node.kind === 'folder'));

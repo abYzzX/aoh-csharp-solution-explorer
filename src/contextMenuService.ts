@@ -1,3 +1,4 @@
+import { allowsNodeAction } from './nodeActionPolicy';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -340,6 +341,7 @@ export class ContextMenuService {
             ? vscode.Uri.parse(message.solutionUri)
             : undefined;
         const action = message.action as string;
+        if (!allowsNodeAction(action, kind)) return;
         const targetUris = Array.isArray(message.targetUris)
             ? message.targetUris
                 .filter((value: unknown): value is string => typeof value === 'string')
