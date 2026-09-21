@@ -6,7 +6,7 @@ import type { NodeKind } from '../types';
 test('virtual nodes cannot mutate their backing project through keyboard actions', () => {
     const virtual: NodeKind[] = ['dependencies', 'dependencyGroup', 'dependency', 'properties'];
     for (const kind of virtual) {
-        for (const action of ['delete', 'rename', 'cut', 'copy', 'paste', 'newFile', 'newFolder']) {
+        for (const action of ['delete', 'rename', 'cut', 'copy', 'duplicate', 'paste', 'newFile', 'newFolder']) {
             assert.equal(allowsNodeAction(action, kind), false, `${action}: ${kind}`);
             assert.equal(allowsNodeSelection(action, ['file', kind]), false);
         }
@@ -14,7 +14,7 @@ test('virtual nodes cannot mutate their backing project through keyboard actions
 });
 
 test('physical selections retain edit operations', () => {
-    for (const action of ['delete', 'rename', 'cut', 'copy', 'paste', 'newFile', 'newFolder']) {
+    for (const action of ['delete', 'rename', 'cut', 'copy', 'duplicate', 'paste', 'newFile', 'newFolder']) {
         assert.equal(allowsNodeSelection(action, ['file', 'folder']), true);
         assert.equal(allowsNodeAction(action, undefined), false);
     }

@@ -16,7 +16,7 @@ AOH Solution Explorer provides a project-centric .NET solution tree inside VS Co
 - Errors may color nodes; warnings are intentionally ignored by the current visible decoration behavior.
 - Keep Git repository discovery based on actual solution/project probe paths, not workspace folders alone.
 - Multi-selection operations must operate on the effective selection, not accidentally only on the context-clicked item.
-- File moves/deletes/copy operations must not silently overwrite existing files.
+- File moves/deletes/copy operations must not silently overwrite existing files. Paste/duplicate collisions require an explicit new name.
 - Drag and drop must retain its safety checks and optional confirmation.
 
 ## Tests
@@ -31,6 +31,6 @@ npm test
 
 before completing changes.
 
-## Current Follow-up Work
+## Current Filesystem Behavior
 
-See `EXTENSION-DESIGN.md` for planned behavior. In particular, copy/cut/paste, duplicate, keyboard command integration, and full-filename type-to-search remain areas to improve; do not claim them complete merely because command IDs already exist.
+Copy, cut, paste, and duplicate are implemented for physical files/folders with multi-selection where appropriate. Collision handling must keep prompting for an explicit new name rather than inventing `copy` suffixes. C# type renaming after a renamed copy must remain conservative: if the matching type cannot be identified safely, leave the copied source unchanged.

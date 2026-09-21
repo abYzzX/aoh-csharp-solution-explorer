@@ -258,7 +258,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
         };
 
         const multiTargetActions = new Set([
-            'copy', 'cut',
+            'copy', 'cut', 'duplicate',
             'copyPath', 'copyRelativePath', 'copyPathSolution', 'copyPathWorkspace', 'copyPathFull',
             'gitTrack', 'gitUntrack', 'gitStage', 'gitUnstage', 'gitRollback',
             'delete'
@@ -285,6 +285,12 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
         });
     }
 
+
+    getViewTitle(): string {
+        if (this.parsedSolutions.length === 1) return this.parsedSolutions[0].name;
+        if (this.parsedSolutions.length > 1) return 'Solutions';
+        return 'Solution';
+    }
 
     getState(): AohSolutionState {
         const activeProject = this.getActiveProject();
@@ -1360,6 +1366,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
         ['aoh.solutionExplorer.copy', 'copy'],
         ['aoh.solutionExplorer.cut', 'cut'],
         ['aoh.solutionExplorer.paste', 'paste'],
+        ['aoh.solutionExplorer.duplicate', 'duplicate'],
         ['aoh.solutionExplorer.copyPathSolution', 'copyPathSolution'],
         ['aoh.solutionExplorer.copyPathWorkspace', 'copyPathWorkspace'],
         ['aoh.solutionExplorer.copyPathFull', 'copyPathFull'],
@@ -1405,6 +1412,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
             canSelectMany: true,
             dragAndDropController
         });
+
+        const updateTreeTitle = (): void => {
+            if (tree && provider) tree.title = provider.getViewTitle();
+        };
+        updateTreeTitle();
+        context.subscriptions.push(provider.onDidChangeSolutionState(updateTreeTitle));
 
         let visualRefreshTimer: ReturnType<typeof setTimeout> | undefined;
         let visualRefreshRunning = false;

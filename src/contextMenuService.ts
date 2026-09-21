@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { CommandContribution, DynamicContextMenuItem, ExplorerMenuContribution, NodeKind } from './types';
+import { isValidSinglePathName, renameMatchingCSharpType } from './fileOperationUtils';
 
 const execFileAsync = promisify(execFile);
 
@@ -401,6 +402,7 @@ export class ContextMenuService {
             case 'copy': this.clipboard = { uris: targetUris, cut: false }; return;
             case 'cut': this.clipboard = { uris: targetUris, cut: true }; return;
             case 'paste': return this.pasteItems(containerUri, kind, solutionFolderPath, uri);
+            case 'duplicate': return this.duplicateItems(targetUris);
             case 'copyPathSolution': {
                 if (targetUris.length > 1) {
                     const values = targetUris.map((target: vscode.Uri) => this.relativePathToSolution(target, solutionUri));
@@ -703,14 +705,23 @@ export class ContextMenuService {
         }
 
         for (const source of this.clipboard.uris) {
-            const target = vscode.Uri.joinPath(targetDirectory, path.basename(source.fsPath));
-            if (this.normalizePath(source.fsPath) === this.normalizePath(target.fsPath)) continue;
+            let target = vscode.Uri.joinPath(targetDirectory, path.basename(source.fsPath));
+
+            // Cutting into the same directory is already the requested final state.
+            if (this.clipboard.cut && this.normalizePath(source.fsPath) === this.normalizePath(target.fsPath)) continue;
+
+            if (await this.exists(target)) {
+                const resolved = await this.promptForCollisionName(source, targetDirectory, 'Paste');
+                if (!resolved) return;
+                target = resolved;
+            }
 
             try {
                 if (this.clipboard.cut) {
                     await vscode.workspace.fs.rename(source, target, { overwrite: false });
                 } else {
                     await vscode.workspace.fs.copy(source, target, { overwrite: false });
+                    await this.renameCopiedCSharpTypeIfSafe(source, target);
                 }
             } catch (error) {
                 vscode.window.showErrorMessage(`Could not paste '${path.basename(source.fsPath)}': ${String(error)}`);
@@ -720,6 +731,86 @@ export class ContextMenuService {
 
         if (this.clipboard.cut) this.clipboard = undefined;
         await this.refresh();
+    }
+
+    private async duplicateItems(sources: vscode.Uri[]): Promise<void> {
+        for (const source of sources) {
+            const directory = vscode.Uri.file(path.dirname(source.fsPath));
+            const target = await this.promptForCollisionName(source, directory, 'Duplicate');
+            if (!target) return;
+
+            try {
+                await vscode.workspace.fs.copy(source, target, { overwrite: false });
+                await this.renameCopiedCSharpTypeIfSafe(source, target);
+            } catch (error) {
+                vscode.window.showErrorMessage(`Could not duplicate '${path.basename(source.fsPath)}': ${String(error)}`);
+                return;
+            }
+        }
+
+        await this.refresh();
+    }
+
+    private async promptForCollisionName(
+        source: vscode.Uri,
+        targetDirectory: vscode.Uri,
+        operation: 'Paste' | 'Duplicate'
+    ): Promise<vscode.Uri | undefined> {
+        const originalName = path.basename(source.fsPath);
+
+        while (true) {
+            const name = await vscode.window.showInputBox({
+                title: `${operation}: Name already exists`,
+                prompt: `Choose a new name for '${originalName}'`,
+                value: originalName,
+                valueSelection: this.fileNameSelection(originalName),
+                validateInput: value => isValidSinglePathName(value)
+                    ? undefined
+                    : 'Enter a single file or directory name.'
+            });
+            if (name === undefined) return undefined;
+
+            const target = vscode.Uri.joinPath(targetDirectory, name.trim());
+            if (!(await this.exists(target))) return target;
+
+            vscode.window.showWarningMessage(`'${name.trim()}' already exists. Choose another name.`);
+        }
+    }
+
+    private fileNameSelection(name: string): [number, number] {
+        const extension = path.extname(name);
+        return extension ? [0, name.length - extension.length] : [0, name.length];
+    }
+
+    private async exists(uri: vscode.Uri): Promise<boolean> {
+        try {
+            await vscode.workspace.fs.stat(uri);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    private async renameCopiedCSharpTypeIfSafe(source: vscode.Uri, target: vscode.Uri): Promise<void> {
+        if (path.extname(source.fsPath).toLowerCase() !== '.cs' || path.extname(target.fsPath).toLowerCase() !== '.cs') return;
+
+        const oldTypeName = path.basename(source.fsPath, path.extname(source.fsPath));
+        const newTypeName = path.basename(target.fsPath, path.extname(target.fsPath));
+        if (oldTypeName === newTypeName) return;
+
+        try {
+            const bytes = await vscode.workspace.fs.readFile(target);
+            const text = Buffer.from(bytes).toString('utf8');
+            const result = renameMatchingCSharpType(text, oldTypeName, newTypeName);
+            if (!result.renamed) {
+                this.log(`Skipped C# type rename for '${path.basename(target.fsPath)}': not unambiguous.`);
+                return;
+            }
+
+            await vscode.workspace.fs.writeFile(target, Buffer.from(result.text, 'utf8'));
+        } catch (error) {
+            this.log(`Could not adjust copied C# type in '${target.fsPath}': ${String(error)}`);
+        }
     }
 
     private relativePathToSolution(uri: vscode.Uri, solutionUri?: vscode.Uri): string {

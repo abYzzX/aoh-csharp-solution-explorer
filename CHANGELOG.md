@@ -2,6 +2,18 @@
 
 All notable user-visible changes to AOH Solution Explorer are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Added Duplicate for files and folders, including multi-selection.
+- Copy/Paste and Duplicate now prompt for a new name on collisions instead of silently inventing names or overwriting files.
+- Renamed C# copies conservatively update a matching contained type when the rename is unambiguous.
+
+### Changed
+
+- The Solution Explorer view header now shows the loaded solution name instead of repeating the AOH Solution Explorer label.
+
 ## 0.1.2
 
 - Added default keybindings to `package.json`

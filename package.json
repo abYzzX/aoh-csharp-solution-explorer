@@ -6,7 +6,7 @@
   "publisher": "Abyzz",
   "icon": "media/aoh-se-icon.png",
   "license": "MIT",
-    "repository": {
+  "repository": {
     "type": "git",
     "url": "https://github.com/Abyzz/aoh-csharp-solution-explorer.git"
   },
@@ -289,6 +289,11 @@
         "icon": "$(files)"
       },
       {
+        "command": "aoh.solutionExplorer.duplicate",
+        "title": "Duplicate...",
+        "icon": "$(files)"
+      },
+      {
         "command": "aoh.solutionExplorer.copyPathSolution",
         "title": "Relative to Solution",
         "icon": "$(file-symlink-file)"
@@ -501,6 +506,11 @@
           "group": "1_clipboard@3"
         },
         {
+          "command": "aoh.solutionExplorer.duplicate",
+          "when": "viewItem =~ /aoh\\.(file|folder)/",
+          "group": "1_clipboard@4"
+        },
+        {
           "command": "aoh.solutionExplorer.rename",
           "group": "2_modify@1"
         },
@@ -666,6 +676,10 @@
         },
         {
           "command": "aoh.solutionExplorer.paste",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.duplicate",
           "when": "false"
         },
         {
@@ -897,6 +911,7 @@
     "onCommand:aoh.solutionExplorer.copy",
     "onCommand:aoh.solutionExplorer.cut",
     "onCommand:aoh.solutionExplorer.paste",
+    "onCommand:aoh.solutionExplorer.duplicate",
     "onCommand:aoh.solutionExplorer.copyPathSolution",
     "onCommand:aoh.solutionExplorer.copyPathWorkspace",
     "onCommand:aoh.solutionExplorer.copyPathFull",

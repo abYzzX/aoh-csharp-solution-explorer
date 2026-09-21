@@ -43,11 +43,15 @@ A workspace folder is not necessarily a repository root. Repository discovery th
 
 Native VS Code workspace edits/APIs should be preferred so file operations integrate with editors and filesystem providers. Operations must guard against overwrites, invalid self-moves, and unsafe project/solution moves. Multi-select should be supported where the operation is naturally multi-target.
 
-## Planned Work
+## Filesystem Copy Operations
 
-### Type-to-Search
+Copy, cut, paste, and duplicate operate on physical files/folders and support multi-selection where appropriate. Existing targets are never silently overwritten: paste and duplicate prompt for a new name for each collision. Duplicate always prompts because the source directory already contains the original name.
 
-When the Solution Explorer has focus, typing should support integrated matching against the full filename, not only prefix matching and not a detached Quick Pick workflow.
+When a copied `.cs` file is renamed, the extension may rename the matching contained C# type only when the transformation is conservative and unambiguous. Ambiguous files are copied unchanged; arbitrary string replacement is forbidden.
+
+## View Title
+
+For a single loaded solution, the Solution Explorer view header is the solution name itself. The AOH product name is already represented by the Activity Bar container and must not be repeated in the view header.
 
 ## Extension API
 

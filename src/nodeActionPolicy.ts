@@ -7,6 +7,7 @@ export function allowsNodeAction(action: string, kind: NodeKind | undefined): bo
         case 'rename':
         case 'cut':
         case 'copy':
+        case 'duplicate':
             return physical;
         case 'delete':
             return physical || kind === 'project' || kind === 'solutionFolder';

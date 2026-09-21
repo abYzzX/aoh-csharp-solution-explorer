@@ -75,7 +75,7 @@ The setting is remembered per workspace.
 
 ### Multi-Select
 
-The Solution Explorer supports native VS Code multi-selection. Actions that naturally work on multiple items, such as Copy/Cut, path copying, Git Stage/Unstage/Rollback and deleting files/folders, operate on the current selection.
+The Solution Explorer supports native VS Code multi-selection. Actions that naturally work on multiple items, such as Copy/Cut, Duplicate, path copying, Git Stage/Unstage/Rollback and deleting files/folders, operate on the current selection. Paste and Duplicate never silently overwrite an existing item; name collisions ask for the desired new name.
 
 ### Native VS Code Integration
 
