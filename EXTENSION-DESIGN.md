@@ -60,3 +60,9 @@ The optional API is independent from TreeView rendering. Preserve compatibility 
 ## Testing Strategy
 
 Test pure behavior without a VS Code host wherever possible: Git porcelain status mapping, state priority/aggregation, path/filter logic, parsers, and other deterministic helpers. Integration-heavy TreeView behavior is validated through focused manual testing rather than a sprawling mocked VS Code environment.
+
+## Project creation
+
+`New Project...` is owned by AOH Solution Explorer instead of delegating placement to C# Dev Kit. The selected Solution is always the logical owner. A project created below a Solution Folder is added to that Solution Folder. Its physical root is the Solution directory unless a directory matching the complete Solution Folder path already exists; in that case the project is created below that physical directory.
+
+After `dotnet new`, the generated project is added with `dotnet sln ... add`. Executable projects also receive idempotent entries in workspace `.vscode/tasks.json` and `.vscode/launch.json`. Existing JSONC files are amended structurally; comments and unrelated entries must not be replaced or reformatted.

@@ -6,6 +6,8 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { CommandContribution, DynamicContextMenuItem, ExplorerMenuContribution, NodeKind } from './types';
 import { isValidSinglePathName, renameMatchingCSharpType } from './fileOperationUtils';
+import { getAssemblyName, getTargetFramework, isExecutableProject, parseDotnetProjectTemplates, resolveProjectRoot } from './projectCreationUtils';
+import { appendObjectToJsoncArray } from './vscodeConfigUtils';
 
 const execFileAsync = promisify(execFile);
 
@@ -427,14 +429,8 @@ export class ContextMenuService {
                 await this.addProjectReference(uri, solutionUri);
                 return;
             }
-            case 'newProject': {
-                const command = this.findDevKitCommand(['new', 'project']) ?? this.findDevKitCommand(['create', 'project']);
-                if (!command) {
-                    vscode.window.showErrorMessage('C# Dev Kit does not expose a New Project command.');
-                    return;
-                }
-                await vscode.commands.executeCommand(command, uri); await this.refresh(); return;
-            }
+            case 'newProject':
+                return this.createProject(uri, kind, solutionFolderPath, solutionUri);
             case 'newSolutionFolder':
                 return this.createSolutionFolder(uri, solutionFolderPath);
             case 'addExistingProject': {
@@ -1164,6 +1160,204 @@ export class ContextMenuService {
     private containerUri(uri: vscode.Uri, kind?: NodeKind): vscode.Uri {
         if (kind === 'folder') return uri;
         return vscode.Uri.file(path.dirname(uri.fsPath));
+    }
+
+    private async createProject(
+        uri: vscode.Uri,
+        kind: NodeKind | undefined,
+        solutionFolderPath: string[],
+        explicitSolutionUri?: vscode.Uri
+    ): Promise<void> {
+        if (kind !== 'solution' && kind !== 'solutionFolder') return;
+
+        const solutionUri = explicitSolutionUri ?? uri;
+        let templates: ReturnType<typeof parseDotnetProjectTemplates>;
+        try {
+            const { stdout } = await execFileAsync('dotnet', ['new', 'list', '--type', 'project', '--language', 'C#'], { cwd: path.dirname(solutionUri.fsPath) });
+            templates = parseDotnetProjectTemplates(stdout.toString());
+        } catch (error: any) {
+            const detail = error?.stderr?.toString().trim() || error?.message || String(error);
+            vscode.window.showErrorMessage(`Failed to load installed .NET project templates: ${detail}`);
+            return;
+        }
+        if (!templates.length) {
+            vscode.window.showInformationMessage('dotnet new did not report any installed C# project templates.');
+            return;
+        }
+
+        const template = await vscode.window.showQuickPick(templates, {
+            title: 'New .NET Project',
+            placeHolder: 'Select an installed dotnet new project template'
+        });
+        if (!template) return;
+
+        const name = await vscode.window.showInputBox({
+            title: `New ${template.label}`,
+            prompt: 'Project name',
+            validateInput: value => isValidSinglePathName(value.trim()) ? undefined : 'Enter a valid project name.'
+        });
+        if (!name?.trim()) return;
+
+        const solutionRoot = path.dirname(solutionUri.fsPath);
+        const physicalSolutionFolder = solutionFolderPath.length
+            ? path.join(solutionRoot, ...solutionFolderPath)
+            : solutionRoot;
+        let physicalFolderExists = false;
+        if (solutionFolderPath.length) {
+            try {
+                const stat = await vscode.workspace.fs.stat(vscode.Uri.file(physicalSolutionFolder));
+                physicalFolderExists = (stat.type & vscode.FileType.Directory) !== 0;
+            } catch {
+                physicalFolderExists = false;
+            }
+        }
+
+        const projectRoot = resolveProjectRoot(solutionUri.fsPath, solutionFolderPath, physicalFolderExists);
+        const projectDirectory = path.join(projectRoot, name.trim());
+        try {
+            await vscode.workspace.fs.stat(vscode.Uri.file(projectDirectory));
+            vscode.window.showErrorMessage(`'${projectDirectory}' already exists.`);
+            return;
+        } catch {
+            // Expected: target does not exist yet.
+        }
+
+        try {
+            await execFileAsync('dotnet', ['new', template.template, '-n', name.trim(), '-o', projectDirectory], { cwd: projectRoot });
+            const projectFile = await this.findCreatedProjectFile(projectDirectory);
+            if (!projectFile) throw new Error('The template did not create a supported project file.');
+
+            const addArgs = ['sln', solutionUri.fsPath, 'add', projectFile];
+            if (kind === 'solutionFolder' && solutionFolderPath.length) {
+                addArgs.push('--solution-folder', solutionFolderPath.join('/'));
+            }
+            await execFileAsync('dotnet', addArgs, { cwd: solutionRoot });
+
+            const projectXml = Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.file(projectFile))).toString('utf8');
+            if (isExecutableProject(projectXml)) {
+                await this.addExecutableProjectConfiguration(solutionUri, projectFile, projectXml, name.trim());
+            }
+
+            await this.refresh();
+            vscode.window.showInformationMessage(`Created project '${name.trim()}'.`);
+        } catch (error: any) {
+            const detail = error?.stderr?.toString().trim() || error?.message || String(error);
+            vscode.window.showErrorMessage(`Failed to create project: ${detail}`);
+        }
+    }
+
+    private async findCreatedProjectFile(projectDirectory: string): Promise<string | undefined> {
+        const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(projectDirectory));
+        const project = entries.find(([name, type]) =>
+            type === vscode.FileType.File && /\.(csproj|fsproj|vbproj)$/i.test(name)
+        );
+        return project ? path.join(projectDirectory, project[0]) : undefined;
+    }
+
+    private async addExecutableProjectConfiguration(
+        solutionUri: vscode.Uri,
+        projectFile: string,
+        projectXml: string,
+        projectName: string
+    ): Promise<void> {
+        const solutionRoot = path.dirname(solutionUri.fsPath);
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(solutionUri)
+            ?? vscode.workspace.workspaceFolders?.[0];
+        const configRoot = workspaceFolder?.uri.fsPath ?? solutionRoot;
+        const relativeProject = path.relative(configRoot, projectFile).replace(/\\/g, '/');
+        const projectDirectory = path.dirname(relativeProject).replace(/\\/g, '/');
+        const targetFramework = getTargetFramework(projectXml);
+        const assemblyName = getAssemblyName(projectXml, projectFile);
+        const taskLabel = `build ${projectName}`;
+
+        const task = {
+            label: taskLabel,
+            type: 'process',
+            command: 'dotnet',
+            args: ['build', `\${workspaceFolder}/${relativeProject}`],
+            problemMatcher: '$msCompile',
+            group: 'build'
+        };
+
+        let launch: Record<string, unknown>;
+        if (targetFramework) {
+            const output = projectDirectory === '.' ? '' : `${projectDirectory}/`;
+            launch = {
+                name: projectName,
+                type: 'coreclr',
+                request: 'launch',
+                preLaunchTask: taskLabel,
+                program: `\${workspaceFolder}/${output}bin/Debug/${targetFramework}/${assemblyName}.dll`,
+                cwd: `\${workspaceFolder}/${projectDirectory === '.' ? '' : projectDirectory}`,
+                console: 'integratedTerminal'
+            };
+        } else {
+            launch = {
+                name: projectName,
+                type: 'coreclr',
+                request: 'launch',
+                preLaunchTask: taskLabel,
+                program: 'dotnet',
+                args: ['run', '--project', `\${workspaceFolder}/${relativeProject}`],
+                cwd: `\${workspaceFolder}/${projectDirectory === '.' ? '' : projectDirectory}`,
+                console: 'integratedTerminal'
+            };
+        }
+
+        const vscodeDirectory = vscode.Uri.file(path.join(configRoot, '.vscode'));
+        await vscode.workspace.fs.createDirectory(vscodeDirectory);
+        await this.appendVsCodeConfiguration(
+            vscode.Uri.joinPath(vscodeDirectory, 'tasks.json'),
+            'tasks',
+            task,
+            { version: '2.0.0', tasks: [] },
+            value => value?.label === taskLabel
+        );
+        await this.appendVsCodeConfiguration(
+            vscode.Uri.joinPath(vscodeDirectory, 'launch.json'),
+            'configurations',
+            launch,
+            { version: '0.2.0', configurations: [] },
+            value => value?.name === projectName
+        );
+    }
+
+    private async appendVsCodeConfiguration(
+        uri: vscode.Uri,
+        property: string,
+        value: Record<string, unknown>,
+        emptyDocument: Record<string, unknown>,
+        isDuplicate: (value: any) => boolean
+    ): Promise<void> {
+        let text: string | undefined;
+        try {
+            text = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+        } catch {
+            // File does not exist yet.
+        }
+
+        if (!text) {
+            const document = { ...emptyDocument, [property]: [value] };
+            await vscode.workspace.fs.writeFile(uri, Buffer.from(`${JSON.stringify(document, null, 2)}\n`, 'utf8'));
+            return;
+        }
+
+        // Duplicate detection deliberately tolerates JSONC comments/trailing commas.
+        const comparable = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1').replace(/,\s*([}\]])/g, '$1');
+        try {
+            const parsed = JSON.parse(comparable);
+            if (Array.isArray(parsed?.[property]) && parsed[property].some(isDuplicate)) return;
+        } catch {
+            // Keep the user's file intact; the structural insertion below can still work with JSONC.
+        }
+
+        const objectText = JSON.stringify(value, null, 2);
+        const updated = appendObjectToJsoncArray(text, property, objectText);
+        if (!updated) {
+            vscode.window.showWarningMessage(`Could not update ${path.basename(uri.fsPath)} automatically. The project was created successfully.`);
+            return;
+        }
+        await vscode.workspace.fs.writeFile(uri, Buffer.from(updated, 'utf8'));
     }
 
     private findDevKitCommand(searchTerms: string[]): string | undefined {

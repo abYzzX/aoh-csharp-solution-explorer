@@ -34,3 +34,7 @@ before completing changes.
 ## Current Filesystem Behavior
 
 Copy, cut, paste, and duplicate are implemented for physical files/folders with multi-selection where appropriate. Collision handling must keep prompting for an explicit new name rather than inventing `copy` suffixes. C# type renaming after a renamed copy must remain conservative: if the matching type cannot be identified safely, leave the copied source unchanged.
+
+## Project creation rules
+
+When changing project creation, preserve these invariants: the new project must be added to the selected Solution; a selected Solution Folder is the logical parent; an existing matching physical Solution Folder directory is the physical root, otherwise the Solution directory is the root; executable projects receive build and launch entries without destroying existing JSONC content.
