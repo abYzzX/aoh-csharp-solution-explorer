@@ -2,6 +2,10 @@
 
 All notable user-visible changes to AOH Solution Explorer are documented here.
 
+### 0.1.6
+
+- Rework all context menues
+
 ### 0.1.5
 
 - Faster file nesting in folders with many files, preserving rule order, wildcard behavior and platform-specific filename matching.
@@ -450,3 +454,7 @@ This is intentionally still a structural/UI prototype. The next passes can refin
 - Package references show their version as the secondary label when the version is declared directly in the project file.
 - Project files now use VS Code's configured Git decoration colors for modified, added, deleted, renamed, and conflicted states.
 - Fixed activation when VS Code's built-in Git extension has not been activated yet; Git integration is now optional and activated safely.
+
+### Changed
+
+- Aligned the project context menu with the ReSharper baseline, including the AOH C# type shortcuts under `Add...`.

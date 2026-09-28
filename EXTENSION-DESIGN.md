@@ -76,3 +76,8 @@ Test pure behavior without a VS Code host wherever possible: Git porcelain statu
 `New Project...` is owned by AOH Solution Explorer instead of delegating placement to C# Dev Kit. The selected Solution is always the logical owner. A project created below a Solution Folder is added to that Solution Folder. Its physical root is the Solution directory unless a directory matching the complete Solution Folder path already exists; in that case the project is created below that physical directory.
 
 After `dotnet new`, the generated project is added with `dotnet sln ... add`. Executable projects also receive idempotent entries in workspace `.vscode/tasks.json` and `.vscode/launch.json`. Existing JSONC files are amended structurally; comments and unrelated entries must not be replaced or reformatted.
+
+
+## Native tree and menu baseline
+
+The explorer uses VS Code's native `TreeView`; it is not a WebView. The ReSharper Solution Explorer is the visual and interaction baseline for tree structure and context-menu grouping. AOH may deliberately diverge as features are refined. Keep ordinary VS Code tree behavior (selection, keyboard navigation, focus, multi-select and accessibility) native instead of reimplementing it in HTML.

@@ -429,6 +429,44 @@ export class ContextMenuService {
                 await this.addProjectReference(uri, solutionUri);
                 return;
             }
+            case 'manageProjectReferences': {
+                await this.manageProjectReferences(uri, solutionUri);
+                return;
+            }
+            case 'installNugetPackage': {
+                const packageId = await vscode.window.showInputBox({
+                    title: 'Install NuGet Package',
+                    prompt: 'Package ID',
+                    placeHolder: 'CommunityToolkit.Mvvm',
+                    validateInput: value => value.trim() ? undefined : 'Enter a package ID.'
+                });
+                if (!packageId?.trim()) return;
+
+                const version = await vscode.window.showInputBox({
+                    title: `Install ${packageId.trim()}`,
+                    prompt: 'Version (optional)',
+                    placeHolder: 'Leave empty for the latest stable version'
+                });
+                if (version === undefined) return;
+
+                const args = ['add', uri.fsPath, 'package', packageId.trim()];
+                if (version.trim()) args.push('--version', version.trim());
+                await this.runDotnet('Install NuGet Package', uri, args, path.dirname(uri.fsPath));
+                return;
+            }
+            case 'exclude': {
+                const workspace = vscode.workspace.getWorkspaceFolder(uri);
+                if (!workspace) return;
+
+                const relative = path.relative(workspace.uri.fsPath, uri.fsPath).replace(/\\/g, '/');
+                const config = vscode.workspace.getConfiguration('aoh.solutionExplorer', workspace.uri);
+                const excluded = config.get<string[]>('exclude', ['bin', 'obj']);
+                if (!excluded.includes(relative)) {
+                    await config.update('exclude', [...excluded, relative], vscode.ConfigurationTarget.Workspace);
+                }
+                await this.refresh();
+                return;
+            }
             case 'newProject':
                 return this.createProject(uri, kind, solutionFolderPath, solutionUri);
             case 'newSolutionFolder':
@@ -1574,6 +1612,58 @@ export class ContextMenuService {
 
         await vscode.workspace.fs.writeFile(solutionUri, Buffer.from(next, 'utf8'));
         await this.refresh();
+    }
+
+    private async manageProjectReferences(projectUri: vscode.Uri, solutionUri?: vscode.Uri): Promise<void> {
+        if (!solutionUri) {
+            vscode.window.showErrorMessage('Could not determine the solution for this project.');
+            return;
+        }
+
+        const candidates = await this.getSolutionProjects(solutionUri);
+        const current = this.normalizePath(path.resolve(projectUri.fsPath));
+        const existing = await this.getExistingProjectReferences(projectUri);
+        const available = candidates.filter(candidate => this.normalizePath(path.resolve(candidate.fsPath)) !== current);
+
+        const items = available.map(candidate => {
+            const normalized = this.normalizePath(path.resolve(candidate.fsPath));
+            return {
+                label: path.basename(candidate.fsPath, path.extname(candidate.fsPath)),
+                description: path.relative(path.dirname(solutionUri.fsPath), candidate.fsPath),
+                uri: candidate,
+                picked: existing.has(normalized)
+            };
+        });
+
+        const picked = await vscode.window.showQuickPick(items, {
+            title: `Manage Project References - ${path.basename(projectUri.fsPath, path.extname(projectUri.fsPath))}`,
+            placeHolder: 'Select referenced projects',
+            canPickMany: true
+        });
+        if (!picked) return;
+
+        const selected = new Set(picked.map(item => this.normalizePath(path.resolve(item.uri.fsPath))));
+        const toAdd = available.filter(candidate => {
+            const key = this.normalizePath(path.resolve(candidate.fsPath));
+            return selected.has(key) && !existing.has(key);
+        });
+        const toRemove = available.filter(candidate => {
+            const key = this.normalizePath(path.resolve(candidate.fsPath));
+            return existing.has(key) && !selected.has(key);
+        });
+
+        try {
+            for (const candidate of toAdd) {
+                await execFileAsync('dotnet', ['add', projectUri.fsPath, 'reference', candidate.fsPath], { cwd: path.dirname(projectUri.fsPath) });
+            }
+            for (const candidate of toRemove) {
+                await execFileAsync('dotnet', ['remove', projectUri.fsPath, 'reference', candidate.fsPath], { cwd: path.dirname(projectUri.fsPath) });
+            }
+            if (toAdd.length || toRemove.length) await this.refresh();
+        } catch (error: any) {
+            const detail = error?.stderr?.toString().trim() || error?.message || String(error);
+            vscode.window.showErrorMessage(`Failed to update project references: ${detail}`);
+        }
     }
 
     private async addProjectReference(projectUri: vscode.Uri, solutionUri?: vscode.Uri): Promise<void> {
