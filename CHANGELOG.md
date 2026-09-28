@@ -2,6 +2,15 @@
 
 All notable user-visible changes to AOH Solution Explorer are documented here.
 
+### 0.1.5
+
+- Faster file nesting in folders with many files, preserving rule order, wildcard behavior and platform-specific filename matching.
+- Reduced repeated work when filtering excluded files, draining large filesystem read queues and updating decorations.
+- Reduced loading overhead for large solutions and workspaces with shared projects by reusing file reads and loading independent directories concurrently with bounded filesystem activity.
+- Diagnostic updates while typing no longer launch Git commands; Git refreshes reuse repository discovery until the next structural refresh.
+- Faster folder Git coloring in large repositories by indexing parent status once per Git refresh.
+- Overlapping structural refreshes are now serialized and coalesced instead of rebuilding the tree concurrently.
+
 ## 0.1.4
 
 - Creating a project from a Solution or Solution Folder now creates it at the matching physical root, adds it to the solution, and creates VS Code build/debug configuration for executable projects.

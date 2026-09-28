@@ -33,11 +33,21 @@ The extension supports `.sln` and `.slnx`, projects, solution folders, dependenc
 
 Git and diagnostics are visual state layered onto the existing tree. Visual refreshes should update decorations in place rather than rebuild the complete tree. This preserves selection and avoids flicker.
 
+Diagnostic events only refresh the diagnostic snapshot and decorations, without launching Git commands. Save and repository events still refresh Git state. Folder Git colors use a precomputed ancestor index, and diagnostic lookups use the snapshot captured for each refresh.
+
 Git priority for parent propagation is conflict, modified, renamed, added. Deleted files are deliberately ignored for visible coloring and propagation. In combined color mode, errors override Git colors. Warnings are not part of current visible coloring.
 
 ## Git Discovery
 
 A workspace folder is not necessarily a repository root. Repository discovery therefore probes workspace, solution, and project paths and resolves actual roots with `git rev-parse --show-toplevel`. Status is loaded from each deduplicated root using porcelain output.
+
+Successful discovery is cached by exact probe path for visual refreshes, preserving nested repository boundaries. Structural refreshes invalidate discovery. Git loads are serialized so an older request cannot overwrite newer state.
+
+## Tree Loading
+
+The tree is still fully materialized to preserve file reveal, logical solution-folder operations, file nesting, and diagnostic propagation. Independent directory reads run concurrently, limited to eight in-flight directory reads and eight file reads. A per-build cache shares raw reads across projects/solutions without sharing mutable tree nodes. Structural refreshes run serially and coalesce requests received during a build into a follow-up build.
+
+Exclude patterns are compiled once per structural refresh. File nesting indexes exact child names per directory; wildcard rules retain the existing full candidate scan. Candidate order and accent-sensitive locale comparisons on non-Linux hosts are preserved so nesting precedence and cycle prevention remain unchanged.
 
 ## Filesystem Operations
 

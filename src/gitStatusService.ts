@@ -1,14 +1,19 @@
+import { AsyncReadCache } from './asyncReadCache';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { GitFileState } from './types';
-import { gitStatePriority, isPathUnder, mapGitStatus, normalizeGitPath } from './gitStatusUtils';
+import { indexGitStates, mapGitStatus, normalizeGitPath } from './gitStatusUtils';
 
 const execFileAsync = promisify(execFile);
 
 export class GitStatusService {
     readonly status = new Map<string, GitFileState>();
+
+    private aggregated = new Map<string, GitFileState>();
+    private readonly repositoryByPath = new Map<string, string>();
+    private loading: Promise<void> = Promise.resolve();
 
     constructor(private readonly log: (message: string) => void = () => {}) {}
 
@@ -21,8 +26,15 @@ export class GitStatusService {
      * actual repository root with `git rev-parse`, dedupe them, then run status at the
      * repository root so every porcelain path has an unambiguous base directory.
      */
-    async load(probePaths: string[] = []): Promise<void> {
-        this.status.clear();
+    load(probePaths: string[] = [], rediscover = false): Promise<void> {
+        const next = this.loading.then(() => this.loadCore(probePaths, rediscover));
+        this.loading = next.catch(() => {});
+        return next;
+    }
+
+    private async loadCore(probePaths: string[], rediscover: boolean): Promise<void> {
+        if (rediscover) this.repositoryByPath.clear();
+        const status = new Map<string, GitFileState>();
 
         const candidates = new Set<string>();
         for (const folder of vscode.workspace.workspaceFolders ?? []) {
@@ -34,19 +46,29 @@ export class GitStatusService {
 
         const repositoryRoots = new Set<string>();
 
-        for (const candidate of candidates) {
+        // Bound process creation while avoiding one serial round-trip per project.
+        const discovery = new AsyncReadCache<string | undefined>(async candidate => {
+            const cached = this.repositoryByPath.get(candidate);
+            if (cached) return cached;
             try {
                 const { stdout } = await execFileAsync(
                     'git',
                     ['rev-parse', '--show-toplevel'],
                     { cwd: candidate, maxBuffer: 1024 * 1024 }
                 );
-
                 const root = String(stdout).trim();
-                if (root) repositoryRoots.add(normalizeGitPath(root));
+                if (root) {
+                    const normalized = normalizeGitPath(root);
+                    this.repositoryByPath.set(candidate, normalized);
+                    return normalized;
+                }
             } catch {
                 // Candidate is not inside a Git repository. That is fine.
             }
+            return undefined;
+        }, 4);
+        for (const root of await Promise.all([...candidates].map(candidate => discovery.get(candidate)))) {
+            if (root) repositoryRoots.add(root);
         }
 
         for (const normalizedRoot of repositoryRoots) {
@@ -72,7 +94,7 @@ export class GitStatusService {
                     const xy = entry.slice(0, 2);
                     const relativePath = entry.slice(3);
 
-                    this.status.set(
+                    status.set(
                         normalizeGitPath(path.resolve(repositoryRoot, relativePath)),
                         mapGitStatus(xy)
                     );
@@ -89,6 +111,10 @@ export class GitStatusService {
             }
         }
 
+        this.status.clear();
+        for (const [file, state] of status) this.status.set(file, state);
+        this.aggregated = indexGitStates(status);
+
         this.log(`Git state: ${repositoryRoots.size} repositor${repositoryRoots.size === 1 ? 'y' : 'ies'}, ${this.status.size} changed path${this.status.size === 1 ? '' : 's'}.`);
     }
 
@@ -98,22 +124,7 @@ export class GitStatusService {
     }
 
     getStrongestUnder(rootPath: string): GitFileState | undefined {
-        const normalizedRoot = normalizeGitPath(rootPath);
-        let strongest: GitFileState | undefined;
-
-        for (const [filePath, state] of this.status) {
-            // Deleted items are deliberately ignored for parent coloring. A deleted
-            // descendant making an otherwise clean folder/project look 'deleted' is
-            // visually confusing in a solution-oriented tree.
-            if (state === 'deleted') continue;
-            if (!isPathUnder(normalizedRoot, filePath)) continue;
-
-            if (!strongest || gitStatePriority(state) > gitStatePriority(strongest)) {
-                strongest = state;
-            }
-        }
-
-        return strongest;
+        return this.aggregated.get(normalizeGitPath(rootPath));
     }
 
 

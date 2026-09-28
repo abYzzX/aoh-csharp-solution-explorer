@@ -31,11 +31,8 @@ export class DiagnosticService {
 
     get(file: string | vscode.Uri): DiagnosticSummary | undefined {
         if (file instanceof vscode.Uri) {
-            // First ask VS Code directly for this exact document URI. This catches
-            // diagnostics that arrived after the last full cache rebuild.
-            const direct = this.summarize(vscode.languages.getDiagnostics(file));
-            if (direct.errors || direct.warnings) return direct;
-
+            // load() captures one snapshot per refresh; avoid querying VS Code
+            // again for every file in every occurrence of a shared project.
             const byUri = this.byUri.get(this.normalizeUri(file));
             if (byUri) return byUri;
 

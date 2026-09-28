@@ -21,7 +21,7 @@ export class ExplorerDecorationService implements vscode.FileDecorationProvider 
     private readonly changed = new vscode.EventEmitter<vscode.Uri | vscode.Uri[] | undefined>();
     readonly onDidChangeFileDecorations = this.changed.event;
 
-    private readonly states = new Map<string, DecorationState>();
+    private states = new Map<string, DecorationState>();
     private colorMode: ExplorerColorMode;
 
     constructor(colorMode: ExplorerColorMode = 'both') {
@@ -66,8 +66,7 @@ export class ExplorerDecorationService implements vscode.FileDecorationProvider 
             }
         }
 
-        this.states.clear();
-        for (const [key, state] of next) this.states.set(key, state);
+        this.states = next;
 
         // Important: invalidate decorations globally, but do NOT fire tree-data
         // changes. This restores the reliable behavior from 1.11.7 without bringing

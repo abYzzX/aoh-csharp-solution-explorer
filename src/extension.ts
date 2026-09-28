@@ -1,3 +1,6 @@
+import { FileNestingCandidates } from './fileNestingCandidates';
+import { createExcludeMatcher } from './excludeMatcher';
+import { AsyncReadCache } from './asyncReadCache';
 import { allowsNodeAction, allowsNodeSelection } from './nodeActionPolicy';
 import * as vscode from 'vscode';
 import * as path from 'path';
@@ -28,19 +31,49 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
     private readonly parentById = new Map<string, WebNode>();
     private readonly fileByPath = new Map<string, WebNode>();
     private showExcludedFiles = false;
+    private refreshRunning: Promise<void> | undefined;
+    private refreshPending = false;
+    private directoryReads = this.createDirectoryCache();
+    private fileReads = this.createFileCache();
+    private isExcluded = createExcludeMatcher([]);
 
-    constructor(log: (message: string) => void = () => {}) {
+    private createDirectoryCache(): AsyncReadCache<[string, vscode.FileType][]> {
+        return new AsyncReadCache(key => vscode.workspace.fs.readDirectory(vscode.Uri.parse(key)));
+    }
+
+    private createFileCache(): AsyncReadCache<Uint8Array> {
+        return new AsyncReadCache(key => vscode.workspace.fs.readFile(vscode.Uri.parse(key)));
+    }
+
+    constructor(private readonly log: (message: string) => void = () => {}) {
         this.gitStatusService = new GitStatusService(log);
         this.contextMenuService = new ContextMenuService(async () => this.refresh(), log);
     }
 
-    async refresh(): Promise<void> {
-        this.diagnosticService.load();
-        this.roots = await this.buildRoots();
-        await this.gitStatusService.load(this.getGitProbePaths());
-        this.resetNodeState(this.roots);
-        this.applyAggregatedState(this.roots);
-        this.rebuildIndexes();
+    refresh(): Promise<void> {
+        this.refreshPending = true;
+        if (!this.refreshRunning) {
+            this.refreshRunning = this.runRefresh().finally(() => { this.refreshRunning = undefined; });
+        }
+        return this.refreshRunning;
+    }
+
+    private async runRefresh(): Promise<void> {
+        do {
+            this.refreshPending = false;
+            const started = Date.now();
+            this.directoryReads = this.createDirectoryCache();
+            this.fileReads = this.createFileCache();
+            this.isExcluded = createExcludeMatcher(vscode.workspace.getConfiguration('aoh.solutionExplorer')
+                .get<string[]>('exclude', ['bin', 'obj']));
+            this.roots = await this.buildRoots();
+            await this.gitStatusService.load(this.getGitProbePaths(), true);
+            this.diagnosticService.load();
+            this.resetNodeState(this.roots);
+            this.applyAggregatedState(this.roots);
+            this.rebuildIndexes();
+            this.log(`Tree refresh: ${this.parsedSolutions.length} solutions, ${this.fileByPath.size} unique files, ${Date.now() - started} ms.`);
+        } while (this.refreshPending);
         this.changed.fire();
         this.solutionStateChanged.fire();
     }
@@ -53,10 +86,10 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
      * flicker. Structural refreshes are still used for create/delete/rename/config
      * changes; ordinary editor activity only updates decorations in-place.
      */
-    async refreshVisualState(): Promise<void> {
+    async refreshVisualState(refreshGit = true): Promise<void> {
         const roots = await this.ensureRoots();
 
-        await this.gitStatusService.load(this.getGitProbePaths());
+        if (refreshGit) await this.gitStatusService.load(this.getGitProbePaths());
         this.diagnosticService.load();
 
         this.resetNodeState(roots);
@@ -79,17 +112,9 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
     }
 
     private async ensureRoots(): Promise<WebNode[]> {
-        if (!this.roots) {
-            this.diagnosticService.load();
-            this.roots = await this.buildRoots();
-            await this.gitStatusService.load(this.getGitProbePaths());
-            this.resetNodeState(this.roots);
-            this.applyAggregatedState(this.roots);
-            this.rebuildIndexes();
-            this.solutionStateChanged.fire();
-        }
-
-        return this.roots;
+        if (this.refreshRunning) await this.refreshRunning;
+        else if (!this.roots) await this.refresh();
+        return this.roots!;
     }
 
     private getGitProbePaths(): string[] {
@@ -571,7 +596,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
         if (!projectFile) return [];
 
         try {
-            const text = Buffer.from(await vscode.workspace.fs.readFile(projectFile)).toString('utf8');
+            const text = Buffer.from(await this.fileReads.get(projectFile.toString())).toString('utf8');
             const refs: DependencyRef[] = [];
 
             for (const match of text.matchAll(/<PackageReference\b([^>]*)>/g)) {
@@ -633,17 +658,17 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
         rootUri: vscode.Uri = uri
     ): Promise<WebNode[]> {
         try {
-            const entries = await vscode.workspace.fs.readDirectory(uri);
+            const entries = await this.directoryReads.get(uri.toString());
             const folders: WebNode[] = [];
             const files: WebNode[] = [];
 
-            for (const [name, type] of entries) {
-                if (include && !include(name)) continue;
-                if (this.isHiddenInfrastructure(name)) continue;
+            await Promise.all(entries.map(async ([name, type]) => {
+                if (include && !include(name)) return;
+                if (this.isHiddenInfrastructure(name)) return;
 
                 const childUri = vscode.Uri.joinPath(uri, name);
                 const relativePath = path.relative(rootUri.fsPath, childUri.fsPath).replace(/\\/g, '/');
-                if (!this.showExcludedFiles && this.isExcluded(relativePath, name)) continue;
+                if (!this.showExcludedFiles && this.isExcluded(relativePath, name)) return;
 
                 if (type === vscode.FileType.Directory) {
                     folders.push({
@@ -657,7 +682,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
                 } else if (type === vscode.FileType.File) {
                     files.push(this.makeFileNode(childUri));
                 }
-            }
+            }));
 
             folders.sort((a, b) => a.label.localeCompare(b.label));
             files.sort((a, b) => a.label.localeCompare(b.label));
@@ -679,24 +704,21 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
         const patterns = configuration.get<Record<string, string>>('patterns', {});
         const expand = configuration.get<boolean>('expand', true);
-        const entries = Object.entries(patterns) as Array<[string, string]>;
+        const entries = Object.entries(patterns).map(([pattern, children]) =>
+            [pattern, children.split(',').map(child => child.trim()).filter(Boolean)] as const);
 
         if (!entries.length) {
             return files;
         }
 
+        const candidates = new FileNestingCandidates(files);
         const byName = new Map(files.map(file => [file.label, file]));
         const parentFor = new Map<string, string>();
 
         for (const parent of files) {
-            for (const [parentPattern, childPatternsValue] of entries) {
+            for (const [parentPattern, childPatterns] of entries) {
                 const capture = this.matchFileNestingParent(parent.label, parentPattern);
                 if (capture === undefined) continue;
-
-                const childPatterns = childPatternsValue
-                    .split(',')
-                    .map(pattern => pattern.trim())
-                    .filter(Boolean);
 
                 for (const childPattern of childPatterns) {
                     const resolvedPattern = this.resolveFileNestingChildPattern(
@@ -706,7 +728,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
                         capture
                     );
 
-                    for (const child of files) {
+                    for (const child of candidates.get(resolvedPattern)) {
                         if (child.id === parent.id || parentFor.has(child.label)) continue;
                         if (!this.matchesFileNestingPattern(child.label, resolvedPattern)) continue;
                         if (this.wouldCreateFileNestingCycle(parent.label, child.label, parentFor)) continue;
@@ -881,7 +903,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
             node.errorCount = errors;
             node.warningCount = 0;
             node.diagnosticState = errors > 0 ? 'error' : undefined;
-            node.decorationUri = this.createDecorationUri(node);
+            node.decorationUri ??= this.createDecorationUri(node);
 
             return { gitState, errors };
         };
@@ -942,7 +964,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
     private async findProjectFile(root: vscode.Uri): Promise<vscode.Uri | undefined> {
         try {
-            const entries = await vscode.workspace.fs.readDirectory(root);
+            const entries = await this.directoryReads.get(root.toString());
             const project = entries.find(([name, type]: [string, vscode.FileType]) =>
                 type === vscode.FileType.File &&
                 /\.(csproj|fsproj|vbproj)$/i.test(name)
@@ -983,7 +1005,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
     private async parseSln(uri: vscode.Uri): Promise<ParsedSolution | undefined> {
         try {
-            const text = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+            const text = Buffer.from(await this.fileReads.get(uri.toString())).toString('utf8');
             const solutionDir = path.dirname(uri.fsPath);
             const solutionName = path.basename(uri.fsPath, '.sln');
 
@@ -1081,7 +1103,7 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
     private async parseSlnx(uri: vscode.Uri): Promise<ParsedSolution | undefined> {
         try {
-            const text = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+            const text = Buffer.from(await this.fileReads.get(uri.toString())).toString('utf8');
             const solutionDir = path.dirname(uri.fsPath);
             const solutionName = path.basename(uri.fsPath, '.slnx');
             const projects: ParsedProject[] = [];
@@ -1199,35 +1221,6 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
 
 
-
-    private isExcluded(relativePath: string, name: string): boolean {
-        const patterns = vscode.workspace
-            .getConfiguration('aoh.solutionExplorer')
-            .get<string[]>('exclude', ['bin', 'obj']);
-
-        return patterns.some(pattern => {
-            const normalized = pattern.trim().replace(/\\/g, '/');
-            if (!normalized) return false;
-
-            const candidates = normalized.startsWith('**/')
-                ? [normalized, normalized.slice(3)]
-                : [normalized];
-
-            return candidates.some(candidate =>
-                this.matchesGlob(name, candidate) || this.matchesGlob(relativePath, candidate)
-            );
-        });
-    }
-
-    private matchesGlob(value: string, pattern: string): boolean {
-        const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-        const regex = escaped
-            .replace(/\*\*/g, '§§DOUBLESTAR§§')
-            .replace(/\*/g, '[^/]*')
-            .replace(/\?/g, '[^/]')
-            .replace(/§§DOUBLESTAR§§/g, '.*');
-        return new RegExp(`^${regex}$`, 'i').test(value);
-    }
 
     private isHiddenInfrastructure(name: string): boolean {
         return ['.git', '.vs', '.idea', 'node_modules']
@@ -1422,6 +1415,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
         let visualRefreshTimer: ReturnType<typeof setTimeout> | undefined;
         let visualRefreshRunning = false;
         let visualRefreshPending = false;
+        let gitRefreshPending = false;
 
         const runVisualRefresh = async (): Promise<void> => {
             if (!provider) return;
@@ -1435,7 +1429,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
             try {
                 do {
                     visualRefreshPending = false;
-                    await provider.refreshVisualState();
+                    const refreshGit = gitRefreshPending;
+                    gitRefreshPending = false;
+                    await provider.refreshVisualState(refreshGit);
                     const roots = await provider.getChildren();
                     decorationService.update(roots);
                 } while (visualRefreshPending);
@@ -1444,7 +1440,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
             }
         };
 
-        const scheduleVisualRefresh = (delay: number): void => {
+        const scheduleVisualRefresh = (delay: number, refreshGit = true): void => {
+            gitRefreshPending ||= refreshGit;
             if (visualRefreshTimer) clearTimeout(visualRefreshTimer);
             visualRefreshTimer = setTimeout(() => {
                 visualRefreshTimer = undefined;
@@ -1519,7 +1516,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
             vscode.workspace.onDidDeleteFiles(() => provider!.refresh()),
             vscode.workspace.onDidRenameFiles(async () => { await provider!.refresh(); if (followEditor) await selectCurrentFile(); }),
             vscode.workspace.onDidSaveTextDocument(() => scheduleVisualRefresh(75)),
-            vscode.languages.onDidChangeDiagnostics(() => scheduleVisualRefresh(125)),
+            vscode.languages.onDidChangeDiagnostics(() => scheduleVisualRefresh(125, false)),
             vscode.workspace.onDidChangeWorkspaceFolders(async () => { await provider!.refresh(); if (followEditor) await selectCurrentFile(); }),
             vscode.workspace.onDidChangeConfiguration((event: vscode.ConfigurationChangeEvent) => {
                 if (event.affectsConfiguration('aoh.solutionExplorer.colorMode')) {

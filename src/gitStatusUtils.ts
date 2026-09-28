@@ -29,3 +29,20 @@ export function isPathUnder(rootPath: string, filePath: string): boolean {
     const file = normalizeGitPath(filePath);
     return file === root || file.startsWith(root + path.sep);
 }
+
+/** Precompute parent colors once instead of scanning every changed file per folder. */
+export function indexGitStates(states: ReadonlyMap<string, GitFileState>): Map<string, GitFileState> {
+    const result = new Map<string, GitFileState>();
+    for (const [file, state] of states) {
+        if (state === 'deleted') continue;
+        let current = normalizeGitPath(file);
+        while (true) {
+            const previous = result.get(current);
+            if (!previous || gitStatePriority(state) > gitStatePriority(previous)) result.set(current, state);
+            const parent = path.dirname(current);
+            if (parent === current) break;
+            current = parent;
+        }
+    }
+    return result;
+}
