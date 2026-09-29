@@ -81,3 +81,13 @@ After `dotnet new`, the generated project is added with `dotnet sln ... add`. Ex
 ## Native tree and menu baseline
 
 The explorer uses VS Code's native `TreeView`; it is not a WebView. The ReSharper Solution Explorer is the visual and interaction baseline for tree structure and context-menu grouping. AOH may deliberately diverge as features are refined. Keep ordinary VS Code tree behavior (selection, keyboard navigation, focus, multi-select and accessibility) native instead of reimplementing it in HTML.
+
+## Namespace adjustment
+
+`namespaceService.ts` evaluates selected C# projects through MSBuild's property/item query (no build target). Evaluated `RootNamespace` and `Compile` items, including separate target-framework evaluations, determine candidate files. Logical tree ancestry resolves file ownership and Solution Folder scope; physical project-relative paths determine namespaces. Explorer visibility filters do not restrict project-wide operations.
+
+`roslynNamespaceClient.ts` activates C# Dev Kit and its C# Roslyn server. It uses the C# extension's experimental `sendServerRequest` export for document symbols, namespace code actions and action resolution. The adapter is isolated and checked at runtime. `namespaceCodeActions.ts` identifies the namespace provider via Roslyn's language-independent CustomTags metadata, never translated titles. Resolved resource operations (the sibling Move File action) and command-based actions are rejected.
+
+Each complete semantic WorkspaceEdit includes caller/using changes throughout the loaded solution, even outside the selected scope. Refactorings run sequentially against the updated solution to avoid stale overlapping edits. Version checks and document-change detection protect unsaved buffers. Unsupported cases are reported; there is no textual fallback. Cancellation or errors retain completed refactorings and report partial progress.
+
+The real VS Code integration test (`npm run test:integration:namespaces`) creates a temporary solution and isolated profile using installed C# Dev Kit/C# extensions. The runner auto-detects stable VS Code first and then Insiders, and searches both standard extension directories. Set `VSCODE_EXECUTABLE` and `VSCODE_EXTENSIONS_DIR` to override detection. It verifies cross-project usings, aliases, global usings, qualified/generic references, unsaved edits, file/folder scope and successful compilation after refactoring.

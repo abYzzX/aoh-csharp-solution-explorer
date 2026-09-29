@@ -4,6 +4,8 @@ import type { NodeKind } from './types';
 export function allowsNodeAction(action: string, kind: NodeKind | undefined): boolean {
     const physical = kind === 'file' || kind === 'folder';
     switch (action) {
+        case 'adjustNamespaces':
+            return physical || kind === 'project' || kind === 'solution' || kind === 'solutionFolder';
         case 'rename':
         case 'cut':
         case 'copy':

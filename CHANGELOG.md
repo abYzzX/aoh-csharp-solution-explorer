@@ -2,6 +2,12 @@
 
 All notable user-visible changes to AOH Solution Explorer are documented here.
 
+## 0.1.7
+
+- Added **Adjust Namespaces** to project, file, folder, Solution Folder and Solution context menus, including multi-selection. C# Dev Kit's Roslyn refactoring aligns namespaces with RootNamespace and physical folders, and updates affected usings and references throughout the loaded solution. Edits are undoable; unsupported cases are reported.
+- C# Dev Kit and its Roslyn-based C# extension are now required extension dependencies.
+- Hardened the real namespace-refactoring integration runner to auto-detect stable VS Code or Insiders and their installed C# Dev Kit extensions.
+
 ### 0.1.6
 
 - Rework all context menues

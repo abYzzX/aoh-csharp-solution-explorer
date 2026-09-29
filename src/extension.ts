@@ -1,3 +1,4 @@
+import { adjustNamespaces, NamespaceScope } from './namespaceService';
 import { FileNestingCandidates } from './fileNestingCandidates';
 import { createExcludeMatcher } from './excludeMatcher';
 import { AsyncReadCache } from './asyncReadCache';
@@ -274,6 +275,30 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
     async runAction(action: string, element?: WebNode, selectedElements: WebNode[] = []): Promise<void> {
         if (!element?.uri || !allowsNodeAction(action, element.kind)) return;
+
+        if (action === 'adjustNamespaces') {
+            const selected = selectedElements.length ? selectedElements : [element];
+            if (!allowsNodeSelection(action, selected.map(node => node.kind))) return;
+            const scopes: NamespaceScope[] = [];
+            const visit = (node: WebNode): void => {
+                if (node.kind === 'project' && node.uri) {
+                    scopes.push({ project: vscode.Uri.parse(node.uri) });
+                } else if ((node.kind === 'file' || node.kind === 'folder') && node.uri) {
+                    let owner = this.parentById.get(node.id);
+                    while (owner && owner.kind !== 'project') owner = this.parentById.get(owner.id);
+                    if (owner?.uri) scopes.push({
+                        project: vscode.Uri.parse(owner.uri),
+                        target: vscode.Uri.parse(node.uri),
+                        folder: node.kind === 'folder'
+                    });
+                } else {
+                    for (const child of node.children ?? []) visit(child);
+                }
+            };
+            selected.forEach(visit);
+            await adjustNamespaces(scopes, this.log);
+            return;
+        }
 
         const collectUris = (node: WebNode): string[] => {
             const result: string[] = [];
@@ -1343,6 +1368,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
     });
 
     for (const [command, actionName] of [
+        ['aoh.solutionExplorer.adjustNamespaces', 'adjustNamespaces'],
         ['aoh.solutionExplorer.newProject', 'newProject'],
         ['aoh.solutionExplorer.newSolutionFolder', 'newSolutionFolder'],
         ['aoh.solutionExplorer.addExistingProject', 'addExistingProject'],

@@ -29,6 +29,18 @@ The Solution Explorer represents the logical structure of your .NET solution rat
 
 This makes it easier to navigate larger solutions where the project structure matters more than the directory structure on disk.
 
+### Adjust Namespaces
+
+Right-click a project, C# file, folder, Solution Folder, or Solution and choose **Adjust Namespaces**. Multiple selections are supported. Projects and solutions process all included C# source files, including files hidden by explorer filters.
+
+C# Dev Kit's Roslyn language server performs the semantic refactoring: it adjusts namespace declarations and their affected references throughout the loaded solution, including `using` directives, aliases and qualified type names. References outside the selected project or folder are updated too. Successive adjustments use the updated solution so edits to shared callers are preserved.
+
+The namespace is the evaluated project `RootNamespace` followed by the physical folders below the project directory. For example, `Models/Orders/Order.cs` with `<RootNamespace>Company.App</RootNamespace>` becomes `Company.App.Models.Orders`. When omitted, MSBuild supplies the project's default namespace. Logical Solution Folders do not contribute namespace segments.
+
+Requires a trusted workspace, C# Dev Kit with its Roslyn-based C# extension, and .NET SDK 8 or newer for project evaluation. Both extensions are declared dependencies. Let C# Dev Kit finish loading the solution, and save project/props/targets changes first. Existing unsaved C# edits are preserved; refactoring changes remain unsaved and undoable.
+
+Only refactorings offered by Roslyn are applied. Unsupported cases (for example, partial types spanning files or nested namespaces), generated sources, invalid namespace paths and conflicting shared-file targets are reported in **Output > AOH Solution Explorer**. No declaration-only fallback is used. If cancelled or interrupted, already completed semantic refactorings remain applied.
+
 ### File Nesting
 
 Related files can be displayed below their parent file.
@@ -108,7 +120,7 @@ Git colors use VS Code's `gitDecoration.*ResourceForeground` theme colors, so ac
 
 ## Requirements
 
-AOH - Solution Explorer requires the **C# Dev Kit** extension.
+AOH - Solution Explorer requires **C# Dev Kit** and the **C#** extension running its Roslyn language server. Both are installed as extension dependencies.
 
 The C# Dev Kit provides the underlying .NET solution and project information used by the extension.
 

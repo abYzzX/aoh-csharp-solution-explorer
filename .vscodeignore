@@ -2,8 +2,11 @@
 src/**
 tsconfig.json
 **/*.map
-node_modules/**out/test/**
+node_modules/**
+out/test/**
 AGENT.md
 AOH-RULES.md
 EXTENSION-DESIGN.md
 CONTRIBUTING.md
+
+scripts/**

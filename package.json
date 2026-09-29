@@ -351,6 +351,10 @@
         "command": "aoh.solutionExplorer.removeProject",
         "title": "Remove",
         "icon": "$(trash)"
+      },
+      {
+        "command": "aoh.solutionExplorer.adjustNamespaces",
+        "title": "Adjust Namespaces"
       }
     ],
     "menus": {
@@ -566,6 +570,11 @@
           "command": "aoh.solutionExplorer.copyPathWorkspace",
           "when": "view == aoh.solutionExplorer.view && viewItem == aoh.folder",
           "group": "6_path@2"
+        },
+        {
+          "command": "aoh.solutionExplorer.adjustNamespaces",
+          "when": "view == aoh.solutionExplorer.view && viewItem =~ /^aoh\\.(solution|solutionFolder|project|folder|file)(\\.|$)/",
+          "group": "6_rename@2"
         }
       ],
       "aoh.solutionExplorer.add": [
@@ -979,7 +988,8 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "npx @vscode/vsce package",
-    "test": "npm run compile && node --test out/test/**/*.test.js"
+    "test": "npm run compile && node --test out/test/**/*.test.js",
+    "test:integration:namespaces": "npm run compile && node scripts/test-namespaces-integration.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -1042,6 +1052,11 @@
     "onCommand:aoh.solutionExplorer.hideExcludedFiles",
     "onCommand:aoh.solutionExplorer.installNugetPackage",
     "onCommand:aoh.solutionExplorer.manageProjectReferences",
-    "onCommand:aoh.solutionExplorer.exclude"
+    "onCommand:aoh.solutionExplorer.exclude",
+    "onCommand:aoh.solutionExplorer.adjustNamespaces"
+  ],
+  "extensionDependencies": [
+    "ms-dotnettools.csdevkit",
+    "ms-dotnettools.csharp"
   ]
 }
