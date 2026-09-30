@@ -4,7 +4,7 @@
   "description": "A Rider-inspired .NET solution explorer for VS Code.",
   "version": "0.0.0",
   "publisher": "AbYzzX",
-  "icon": "media/aoh-se-icon.png",
+  "icon": "media/aoh-csharp-solution-explorer.png",
   "license": "MIT",
   "repository": {
     "type": "git",

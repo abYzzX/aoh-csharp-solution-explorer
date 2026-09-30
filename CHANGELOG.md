@@ -2,6 +2,10 @@
 
 All notable user-visible changes to AOH Solution Explorer are documented here.
 
+## 0.1.11
+
+- Update icon
+
 ## 0.1.10 
 
 - Fix GitHub-Repo link
