@@ -2,10 +2,18 @@
 
 All notable user-visible changes to AOH Solution Explorer are documented here.
 
-## 0.1.8
+## 0.1.10 
+
+- Fix GitHub-Repo link
+
+## 0.1.9
 
 - Fix Drag & Drop
 - Add "Edit Solution File" to solution context menu
+
+## 0.1.8
+
+- Publish Marketplace
 
 ## 0.1.7
 
