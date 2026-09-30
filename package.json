@@ -355,6 +355,11 @@
       {
         "command": "aoh.solutionExplorer.adjustNamespaces",
         "title": "Adjust Namespaces"
+      },
+      {
+        "command": "aoh.solutionExplorer.editSolutionFile",
+        "title": "Edit Solution File",
+        "icon": "$(edit)"
       }
     ],
     "menus": {
@@ -402,21 +407,6 @@
           "group": "1_dependencies@2"
         },
         {
-          "command": "aoh.solutionExplorer.newProject",
-          "when": "view == aoh.solutionExplorer.view && viewItem =~ /aoh\\.(solution|solutionFolder)/",
-          "group": "1_add@1"
-        },
-        {
-          "command": "aoh.solutionExplorer.addExistingProject",
-          "when": "view == aoh.solutionExplorer.view && viewItem =~ /aoh\\.(solution|solutionFolder)/",
-          "group": "1_add@2"
-        },
-        {
-          "command": "aoh.solutionExplorer.newSolutionFolder",
-          "when": "view == aoh.solutionExplorer.view && viewItem =~ /aoh\\.(solution|solutionFolder)/",
-          "group": "1_add@3"
-        },
-        {
           "command": "aoh.solutionExplorer.cut",
           "when": "view == aoh.solutionExplorer.view && viewItem =~ /aoh\\.(folder|file)/",
           "group": "3_clipboard@1"
@@ -453,18 +443,13 @@
         },
         {
           "submenu": "aoh.solutionExplorer.add",
-          "when": "view == aoh.solutionExplorer.view && viewItem =~ /aoh\\.(project|folder|file)/",
+          "when": "view == aoh.solutionExplorer.view && viewItem =~ /^aoh\\.(solution|solutionFolder|project|folder|file)$/",
           "group": "1_add@1"
         },
         {
           "command": "aoh.solutionExplorer.newFolder",
           "when": "view == aoh.solutionExplorer.view && viewItem == aoh.project",
           "group": "2_create@1"
-        },
-        {
-          "command": "aoh.solutionExplorer.addExistingItem",
-          "when": "view == aoh.solutionExplorer.view && viewItem == aoh.project",
-          "group": "2_create@2"
         },
         {
           "command": "aoh.solutionExplorer.reveal",
@@ -575,9 +560,29 @@
           "command": "aoh.solutionExplorer.adjustNamespaces",
           "when": "view == aoh.solutionExplorer.view && viewItem =~ /^aoh\\.(solution|solutionFolder|project|folder|file)(\\.|$)/",
           "group": "6_rename@2"
+        },
+        {
+          "command": "aoh.solutionExplorer.editSolutionFile",
+          "when": "view == aoh.solutionExplorer.view && viewItem == aoh.solution",
+          "group": "3_open@1"
         }
       ],
       "aoh.solutionExplorer.add": [
+        {
+          "command": "aoh.solutionExplorer.newProject",
+          "when": "viewItem =~ /^aoh\\.(solution|solutionFolder)$/",
+          "group": "1_add@1"
+        },
+        {
+          "command": "aoh.solutionExplorer.addExistingProject",
+          "when": "viewItem =~ /^aoh\\.(solution|solutionFolder)$/",
+          "group": "1_add@2"
+        },
+        {
+          "command": "aoh.solutionExplorer.newSolutionFolder",
+          "when": "viewItem =~ /^aoh\\.(solution|solutionFolder)$/",
+          "group": "1_add@3"
+        },
         {
           "command": "aoh.solutionExplorer.newDotNetFile",
           "when": "viewItem =~ /aoh\\.(project|folder|file)/",
@@ -607,6 +612,11 @@
           "command": "aoh.solutionExplorer.newRecord",
           "when": "viewItem =~ /aoh\\.(project|folder|file)/",
           "group": "2_types@5"
+        },
+        {
+          "command": "aoh.solutionExplorer.addExistingItem",
+          "when": "viewItem =~ /^aoh\\.(solution|solutionFolder|project|folder|file)$/",
+          "group": "3_existing@1"
         }
       ],
       "aoh.solutionExplorer.edit": [
@@ -829,6 +839,10 @@
         },
         {
           "command": "aoh.solutionExplorer.exclude",
+          "when": "false"
+        },
+        {
+          "command": "aoh.solutionExplorer.editSolutionFile",
           "when": "false"
         }
       ],
@@ -1053,7 +1067,8 @@
     "onCommand:aoh.solutionExplorer.installNugetPackage",
     "onCommand:aoh.solutionExplorer.manageProjectReferences",
     "onCommand:aoh.solutionExplorer.exclude",
-    "onCommand:aoh.solutionExplorer.adjustNamespaces"
+    "onCommand:aoh.solutionExplorer.adjustNamespaces",
+    "onCommand:aoh.solutionExplorer.editSolutionFile"
   ],
   "extensionDependencies": [
     "ms-dotnettools.csdevkit",

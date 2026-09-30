@@ -527,7 +527,12 @@ export class SolutionExplorerTreeDataProvider implements vscode.TreeDataProvider
 
         const itemNodes = solutionItems
             .sort((a, b) => path.basename(a.fsPath).localeCompare(path.basename(b.fsPath)))
-            .map(uri => this.makeFileNode(uri));
+            .map(uri => ({
+                ...this.makeFileNode(uri),
+                id: `solution-item:${solution.uri.toString()}:${folderPath.join('/')}:${uri.toString()}`,
+                solutionUri: solution.uri.toString(),
+                solutionFolderPath: [...folderPath]
+            }));
 
         return {
             id: `solution-folder:${solution.uri.toString()}:${folderPath.join('/')}`,
@@ -1405,6 +1410,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
         ['aoh.solutionExplorer.packProject', 'packProject'],
         ['aoh.solutionExplorer.publishProject', 'publishProject'],
         ['aoh.solutionExplorer.open', 'open'],
+        ['aoh.solutionExplorer.editSolutionFile', 'open'],
         ['aoh.solutionExplorer.openToSide', 'openToSide'],
         ['aoh.solutionExplorer.rename', 'rename'],
         ['aoh.solutionExplorer.delete', 'delete'],
@@ -1426,7 +1432,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AohSol
         const initialRoots = await provider.getChildren();
         decorationService.update(initialRoots);
 
-        const dragAndDropController = new SolutionExplorerDragAndDropController(log);
+        const dragAndDropController = new SolutionExplorerDragAndDropController(log, async () => { await provider!.refresh(); });
 
         tree = vscode.window.createTreeView('aoh.solutionExplorer.view', {
             treeDataProvider: provider,

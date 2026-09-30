@@ -1,3 +1,4 @@
+import { ensureSolutionItemsFolder } from './solutionItemUtils';
 import { allowsNodeAction } from './nodeActionPolicy';
 import * as vscode from 'vscode';
 import * as path from 'path';
@@ -29,8 +30,11 @@ export class ContextMenuService {
                         this.internal('New Project...', 'newProject'),
                         this.internal('New Solution Folder...', 'newSolutionFolder'),
                         this.separator(),
-                        this.internal('Existing Project...', 'addExistingProject')
+                        this.internal('Existing Project...', 'addExistingProject'),
+                        this.internal('Add Existing Item...', 'addExistingItem')
                     ]),
+                    this.separator(),
+                    this.internal('Edit Solution File', 'open'),
                     this.separator(),
                     this.internal('Build Solution', 'buildSolution'),
                     this.submenu('Advanced Build Actions', [
@@ -51,7 +55,8 @@ export class ContextMenuService {
                         this.internal('New Project...', 'newProject'),
                         this.internal('New Solution Folder...', 'newSolutionFolder'),
                         this.separator(),
-                        this.internal('Existing Project...', 'addExistingProject')
+                        this.internal('Existing Project...', 'addExistingProject'),
+                        this.internal('Add Existing Item...', 'addExistingItem')
                     ]),
                     this.separator(),
                     this.editMenu(uri, kind),
@@ -66,7 +71,8 @@ export class ContextMenuService {
                 if (newDotnetFile) addChildren.push(newDotnetFile);
                 addChildren.push(
                     this.internal('New Directory...', 'newFolder'),
-                    this.internal('New File...', 'newFile')
+                    this.internal('New File...', 'newFile'),
+                    this.internal('Add Existing Item...', 'addExistingItem')
                 );
                 addChildren.push(
                     this.separator(),
@@ -103,7 +109,8 @@ export class ContextMenuService {
                 if (newDotnetFile) addChildren.push(newDotnetFile);
                 addChildren.push(
                     this.internal('New Directory...', 'newFolder'),
-                    this.internal('New File...', 'newFile')
+                    this.internal('New File...', 'newFile'),
+                    this.internal('Add Existing Item...', 'addExistingItem')
                 );
 
                 items.push(
@@ -997,7 +1004,14 @@ export class ContextMenuService {
         });
         if (!selected?.length) return;
 
-        if (kind === 'solutionFolder') {
+        if (kind === 'solution') {
+            const raw = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+            const next = ensureSolutionItemsFolder(raw, uri.fsPath.toLowerCase().endsWith('.slnx'), crypto.randomUUID());
+            if (next !== raw) await vscode.workspace.fs.writeFile(uri, Buffer.from(next, 'utf8'));
+            solutionFolderPath = ['Solution Items'];
+        }
+
+        if (kind === 'solutionFolder' || kind === 'solution') {
             if (!solutionFolderPath.length) {
                 vscode.window.showErrorMessage('Could not resolve the selected Solution Folder.');
                 return;
@@ -1007,7 +1021,7 @@ export class ContextMenuService {
             return;
         }
 
-        if (kind !== 'project' && kind !== 'folder') return;
+        if (kind !== 'project' && kind !== 'folder' && kind !== 'file') return;
         const targetDirectory = this.containerUri(uri, kind);
         let copied = 0;
 

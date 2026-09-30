@@ -2,6 +2,11 @@
 
 All notable user-visible changes to AOH Solution Explorer are documented here.
 
+## 0.1.8
+
+- Fix Drag & Drop
+- Add "Edit Solution File" to solution context menu
+
 ## 0.1.7
 
 - Added **Adjust Namespaces** to project, file, folder, Solution Folder and Solution context menus, including multi-selection. C# Dev Kit's Roslyn refactoring aligns namespaces with RootNamespace and physical folders, and updates affected usings and references throughout the loaded solution. Edits are undoable; unsupported cases are reported.
